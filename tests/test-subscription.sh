@@ -45,7 +45,15 @@ run_import() {
 
 mkdir -p "$TMP/local files"
 local_file="$TMP/local files/first config.yaml"
-printf 'mode: rule\nmarker: local-one\n' >"$local_file"
+cat >"$local_file" <<'EOF'
+mode: rule
+marker: local-one
+proxies:
+  - name: Local Node
+    type: ss
+    server: local-node-secret.invalid
+    password: local-password-secret
+EOF
 first="$(run_import "$local_file")"
 jq -e '.ok and .action == "added" and .kind == "local"' <<<"$first" >/dev/null
 first_path="$(jq -r .path <<<"$first")"
@@ -59,7 +67,15 @@ jq -e '.action == "added" and .kind == "local"' <<<"$second" >/dev/null
 body="$TMP/proxy-body.yaml"
 port_file="$TMP/proxy-port"
 proxy_log="$TMP/proxy.log"
-printf 'mode: rule\nmarker: remote-one\n' >"$body"
+cat >"$body" <<'EOF'
+mode: rule
+marker: remote-one
+proxies:
+  - name: Remote Node One
+    type: vmess
+    server: remote-node-secret.invalid
+    uuid: remote-uuid-secret
+EOF
 # shellcheck disable=SC1090
 source ~/.venv/bin/activate
 python - "$body" "$port_file" "$proxy_log" <<'PY' &
@@ -108,7 +124,7 @@ assert_eq "$(stat -Lc %a "$url_dir/config.yaml")" 600
 grep -Fq "$url" "$proxy_log" || fail "curl did not honor the configured HTTP proxy"
 
 direct_data="$TMP/direct-data/subscriptions"
-printf 'mode: rule\nmarker: direct-without-proxy\n' >"$body"
+printf 'mode: rule\nmarker: direct-without-proxy\nproxies: []\n' >"$body"
 printf '%s\n' "http://127.0.0.1:$port/direct" | env \
   -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u all_proxy -u ALL_PROXY \
   MIHOMO_SUBSCRIPTION_TESTING=1 \
@@ -118,7 +134,15 @@ printf '%s\n' "http://127.0.0.1:$port/direct" | env \
   "$IMPORT" >/dev/null
 grep -Rq 'direct-without-proxy' "$direct_data" || fail "direct URL import failed without a proxy"
 
-printf 'mode: rule\nmarker: remote-two\n' >"$body"
+cat >"$body" <<'EOF'
+mode: rule
+marker: remote-two
+proxies:
+  - name: Remote Node Two
+    type: trojan
+    server: remote-two-secret.invalid
+    password: remote-two-password-secret
+EOF
 remote_two="$(printf '%s\n' "$url" | env "${common_env[@]}" \
   http_proxy="http://127.0.0.1:$port" no_proxy= NO_PROXY= "$IMPORT")"
 jq -e '.action == "updated" and .id == $id' --arg id "url-$url_hash" <<<"$remote_two" >/dev/null
@@ -134,15 +158,33 @@ fi
 after_hash="$(sha256sum "$url_dir/config.yaml" | awk '{print $1}')"
 assert_eq "$after_hash" "$before_hash"
 
-printf 'mode: rule\nmarker: remote-three\n' >"$body"
+cat >"$body" <<'EOF'
+mode: rule
+marker: remote-three
+proxies:
+  - name: Remote Node Three
+    type: hysteria2
+    server: remote-three-secret.invalid
+    password: remote-three-password-secret
+EOF
 other_url='http://subscription.invalid/other?token=different'
 printf '%s\n' "$other_url" | env "${common_env[@]}" \
   http_proxy="http://127.0.0.1:$port" no_proxy= NO_PROXY= "$IMPORT" >/dev/null
 [[ $(find "$data" -maxdepth 1 -type d -name 'url-*' | wc -l) == 2 ]] || fail "distinct URL was not stored separately"
 
 status_json="$(env MIHOMO_SUBSCRIPTION_TESTING=1 MIHOMO_SUBSCRIPTION_DATA="$data" "$STATUS")"
-jq -e '.count == 4 and .hasSubscriptions and ([.subscriptions[].kind] | map(select(. == "url")) | length) == 2' <<<"$status_json" >/dev/null
-if grep -Fq 'top-secret' <<<"$status_json"; then fail "status output leaked a subscription token"; fi
+jq -e '
+  .count == 4
+  and .hasSubscriptions
+  and .nodeCount == 4
+  and ([.subscriptions[].kind] | map(select(. == "url")) | length) == 2
+  and ([.subscriptions[].nodes[].name] | index("Local Node") != null)
+  and ([.subscriptions[].nodes[].name] | index("Remote Node Two") != null)
+  and ([.subscriptions[].nodes[].type] | index("trojan") != null)
+' <<<"$status_json" >/dev/null
+if grep -Eq 'top-secret|node-secret|password-secret|uuid-secret' <<<"$status_json"; then
+  fail "status output leaked subscription credentials"
+fi
 
 if command -v inotifywait >/dev/null 2>&1; then
   watched_data="$TMP/watched-plugin/data/subscriptions"

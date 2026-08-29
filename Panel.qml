@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -29,7 +30,11 @@ Panel {
   property real geoipSize: 0
   property bool cursorActive: false
   property var subscriptions: []
+  property var nodeRows: []
   property int subscriptionCount: 0
+  property int nodeCount: 0
+  property int providerCount: 0
+  property int nodeParseErrorCount: 0
   property string subscriptionError: ""
   property string subscriptionStatusError: ""
   property string subscriptionMessage: ""
@@ -83,6 +88,24 @@ Panel {
       var parsed = JSON.parse(String(raw || "{}"))
       subscriptions = Array.isArray(parsed.subscriptions) ? parsed.subscriptions : []
       subscriptionCount = Number(parsed.count || 0)
+      nodeCount = Number(parsed.nodeCount || 0)
+      providerCount = Number(parsed.providerCount || 0)
+      var rows = []
+      var parseErrors = 0
+      for (var i = 0; i < subscriptions.length; i++) {
+        var subscription = subscriptions[i]
+        if (subscription.parseError === true) parseErrors++
+        var nodes = Array.isArray(subscription.nodes) ? subscription.nodes : []
+        for (var j = 0; j < nodes.length; j++) {
+          rows.push({
+            sectionTitle: j === 0 ? String(subscription.label || "Subscription") : "",
+            name: String(nodes[j].name || "Unnamed node"),
+            type: String(nodes[j].type || "unknown")
+          })
+        }
+      }
+      nodeRows = rows
+      nodeParseErrorCount = parseErrors
       subscriptionStatusError = ""
     } catch (error) {
       subscriptionStatusError = "Could not read subscription status"
@@ -422,7 +445,9 @@ Panel {
             delegate: InfoPair {
               required property var modelData
               label: modelData.label
-              value: root.formatBytes(modelData.bytes) + " · " + modelData.modified
+              value: modelData.parseError ? "Node parse error"
+                : (modelData.nodeCount + " nodes · " + root.formatBytes(modelData.bytes))
+              valueColor: modelData.parseError ? root.urgent : root.dim
             }
           }
 
@@ -430,6 +455,82 @@ Panel {
             visible: root.subscriptionCount > 5
             width: parent.width
             text: "+ " + (root.subscriptionCount - 5) + " more"
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+
+          PanelSectionHeader {
+            visible: root.subscriptionCount > 0
+            text: "NODES · " + root.nodeCount
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+          }
+
+          Text {
+            visible: root.subscriptionCount > 0 && root.nodeCount === 0 && root.nodeParseErrorCount === 0
+            width: parent.width
+            text: root.providerCount > 0 ? "No inline nodes; this configuration references proxy providers." : "No inline nodes found"
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+
+          Text {
+            visible: root.nodeParseErrorCount > 0
+            width: parent.width
+            text: root.nodeParseErrorCount + " subscription configuration could not be parsed"
+            color: root.urgent
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+
+          ListView {
+            id: nodeList
+            visible: root.nodeRows.length > 0
+            width: parent.width
+            height: Math.min(contentHeight, Style.space(240))
+            spacing: Style.space(4)
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            interactive: contentHeight > height
+
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+            model: root.nodeRows
+
+            delegate: Item {
+              required property var modelData
+              width: ListView.view.width
+              height: nodeDelegateColumn.implicitHeight
+
+              Column {
+                id: nodeDelegateColumn
+                width: parent.width
+                spacing: Style.space(4)
+
+                PanelSectionHeader {
+                  visible: modelData.sectionTitle !== ""
+                  height: visible ? implicitHeight : 0
+                  text: modelData.sectionTitle
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                }
+
+                NodePair {
+                  label: modelData.name
+                  value: modelData.type.toUpperCase()
+                }
+              }
+            }
+          }
+
+          Text {
+            visible: root.nodeRows.length < root.nodeCount
+            width: parent.width
+            text: "+ " + (root.nodeCount - root.nodeRows.length) + " more nodes not rendered"
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
@@ -528,6 +629,34 @@ Panel {
           }
         }
       }
+    }
+  }
+
+  component NodePair: Row {
+    property string label: ""
+    property string value: ""
+
+    width: parent.width
+    spacing: Style.space(8)
+
+    Text {
+      width: Math.max(0, parent.width - nodeType.width - parent.spacing)
+      text: parent.label
+      color: root.foreground
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.body
+      elide: Text.ElideRight
+    }
+
+    Text {
+      id: nodeType
+      width: Math.min(implicitWidth, parent.width * 0.28)
+      text: parent.value
+      color: root.dim
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+      horizontalAlignment: Text.AlignRight
+      elide: Text.ElideLeft
     }
   }
 

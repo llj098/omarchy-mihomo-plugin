@@ -62,6 +62,8 @@ Omarchy recursively watches plugin directories and its validator rejects symlink
 
 The complete URL is saved in `source.url` with mode 0600 but is never returned by the status helper. Importing the exact URL again atomically updates its existing entry. Local files deliberately have no source metadata or deduplication and create a new entry each time. Entries and the data directory use modes 0600 and 0700 respectively.
 
+The subscription status helper uses the system `python-yaml` SafeLoader with bounded alias expansion to parse inline `proxies`. Only each node's `name` and `type` enter status JSON; server addresses, ports, UUIDs, passwords, and other credentials are never returned. The panel displays nodes in a height-bounded native `ListView`, grouped by subscription. Up to 500 nodes per subscription are rendered, with the full count and truncation notice retained. `proxy-providers` are counted, but provider nodes cannot be listed until their separate provider files exist locally.
+
 Downloads and local copies are limited to 8 MiB. Every candidate must pass `mihomo -t` in an isolated temporary directory before an atomic commit; a failed import leaves the previous subscription unchanged. The importer accepts complete Mihomo/Clash YAML configurations, not encoded node lists requiring an online converter.
 
 The helpers can also be used directly:
@@ -119,7 +121,7 @@ The bootstrap:
 ./tests/test-ui.sh
 ```
 
-The local tests use localhost fixtures to verify rank-based Bootstrap failover and proxy removal, subscription proxy inheritance, exact-URL deduplication, unrestricted local-file duplication, permissions, validation failure atomicity, and UI separation. UI tests also cover missing/ready installation states, manifest shape, required Omarchy components, and the absence of hard-coded visual tokens.
+The local tests use localhost fixtures to verify rank-based Bootstrap failover and proxy removal, subscription proxy inheritance, exact-URL deduplication, unrestricted local-file duplication, permissions, validation failure atomicity, credential-safe node parsing, and UI separation. UI tests also cover missing/ready installation states, bounded node rendering, manifest shape, required Omarchy components, and the absence of hard-coded visual tokens.
 
 For a real China-mirror download/signature test without installation:
 

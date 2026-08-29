@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "fatlj.mihomo",
   "name": "Mihomo",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": "fatlj",
-  "description": "Bootstrap Mihomo and import validated subscriptions from a native Omarchy bar panel.",
+  "description": "Bootstrap Mihomo, import subscriptions, and inspect proxy nodes from a native Omarchy bar panel.",
   "kinds": [
     "bar-widget"
   ],

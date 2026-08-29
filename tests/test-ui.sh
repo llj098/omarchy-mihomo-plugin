@@ -5,6 +5,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 STATUS="$ROOT/bootstrap/status.sh"
 SUBSCRIPTION_IMPORT="$ROOT/subscription/import.sh"
 SUBSCRIPTION_STATUS="$ROOT/subscription/status.sh"
+SUBSCRIPTION_STATUS_PY="$ROOT/subscription/status.py"
 PANEL="$ROOT/Panel.qml"
 MANIFEST="$ROOT/manifest.json"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/mihomo-ui-test.XXXXXX")"
@@ -15,13 +16,14 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 bash -n "$STATUS"
 bash -n "$SUBSCRIPTION_IMPORT"
 bash -n "$SUBSCRIPTION_STATUS"
+python3 -c 'import ast, pathlib, sys; ast.parse(pathlib.Path(sys.argv[1]).read_text())' "$SUBSCRIPTION_STATUS_PY"
 if command -v shellcheck >/dev/null 2>&1; then
   shellcheck "$STATUS" "$SUBSCRIPTION_IMPORT" "$SUBSCRIPTION_STATUS"
 fi
 jq -e '
   .schemaVersion == 1
   and .id == "fatlj.mihomo"
-  and .version == "0.2.0"
+  and .version == "0.3.0"
   and (.kinds | index("bar-widget") != null)
   and .entryPoints.barWidget == "Panel.qml"
   and .barWidget.defaultSection == "right"
@@ -73,10 +75,13 @@ grep -Fq 'command: [root.subscriptionStatusScript]' "$PANEL" || fail "subscripti
 grep -Fq 'stdinEnabled: true' "$PANEL" || fail "subscription source is exposed through argv instead of stdin"
 [[ $(grep -c 'PanelSeparator {' "$PANEL") -ge 2 ]] || fail "installation and subscriptions are not visibly separated"
 grep -Fq 'text: root.subscriptionCount > 0 ? ("SUBSCRIPTIONS · " + root.subscriptionCount) : "SUBSCRIPTIONS"' "$PANEL" || fail "subscription section is missing"
+grep -Fq 'text: "NODES · " + root.nodeCount' "$PANEL" || fail "node inventory section is missing"
+grep -Fq 'model: root.nodeRows' "$PANEL" || fail "parsed nodes are not connected to the UI"
+grep -Fq 'height: Math.min(contentHeight, Style.space(240))' "$PANEL" || fail "node list is not height-bounded"
 grep -Fq 'implicitWidth: button.implicitWidth' "$PANEL" || fail "bar widget does not publish its button width"
 grep -Fq 'implicitHeight: button.implicitHeight' "$PANEL" || fail "bar widget does not publish its button height"
 if grep -Eq '#[[:xdigit:]]{3,8}|font\.pixelSize:[[:space:]]*[0-9]|spacing:[[:space:]]*[0-9]|radius:[[:space:]]*[0-9]' "$PANEL"; then
   fail "panel contains hard-coded visual tokens"
 fi
 
-echo "ui_tests=ok missing_state=1 ready_state=1 omarchy_components=10 subscription_section=separate style_tokens=shared"
+echo "ui_tests=ok missing_state=1 ready_state=1 omarchy_components=10 subscription_section=separate node_list=bounded style_tokens=shared"
