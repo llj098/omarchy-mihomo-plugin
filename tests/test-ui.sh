@@ -61,6 +61,8 @@ for component in Panel BarIconButton KeyboardPanel PanelKeyCatcher PanelHero Cur
 done
 grep -Fq 'visible: root.bootstrapAvailable' "$PANEL" || fail "Bootstrap visibility is not state-gated"
 grep -Fq 'command: [root.bootstrapScript, "launch"]' "$PANEL" || fail "Bootstrap button does not invoke the reviewed script"
+grep -Fq 'implicitWidth: button.implicitWidth' "$PANEL" || fail "bar widget does not publish its button width"
+grep -Fq 'implicitHeight: button.implicitHeight' "$PANEL" || fail "bar widget does not publish its button height"
 if grep -Eq '#[[:xdigit:]]{3,8}|font\.pixelSize:[[:space:]]*[0-9]|spacing:[[:space:]]*[0-9]|radius:[[:space:]]*[0-9]' "$PANEL"; then
   fail "panel contains hard-coded visual tokens"
 fi

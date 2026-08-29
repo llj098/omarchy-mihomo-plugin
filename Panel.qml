@@ -125,6 +125,12 @@ Panel {
     onTriggered: root.refreshStatus()
   }
 
+  // Bar widgets must publish the button's implicit geometry. Anchoring the
+  // button alone does not give the plugin slot a width, so the icon would be
+  // loaded but occupy a zero-width slot.
+  implicitWidth: button.implicitWidth
+  implicitHeight: button.implicitHeight
+
   BarIconButton {
     id: button
     anchors.fill: parent
