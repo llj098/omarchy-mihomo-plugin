@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -805,13 +806,13 @@ Panel {
                       width: subscriptionList.width
                       spacing: Style.space(4)
 
-                      Row {
+                      RowLayout {
                         width: parent.width
                         spacing: Style.space(6)
 
                         CursorSurface {
                           id: groupHeaderSurface
-                          width: parent.width - groupTestButton.width - parent.spacing
+                          Layout.fillWidth: true
                           height: Math.max(groupHeader.implicitHeight, groupMeta.implicitHeight)
                             + Style.spacing.controlGap
                           foreground: root.foreground
@@ -848,38 +849,23 @@ Panel {
                           }
                         }
 
-                        CursorSurface {
+                        Button {
                           id: groupTestButton
                           readonly property bool testing: root.latencyBusyKey === root.groupExpansionKey(
                             subscriptionList.subscription.id, groupList.group.name)
                           visible: groupList.group.directNodeCount > 0
-                          width: visible ? groupTestLabel.implicitWidth + Style.space(14) : 0
-                          height: groupHeaderSurface.height
+                          iconText: "󰓅"
+                          tooltipText: testing ? "Testing" : "Speed Test"
                           foreground: root.foreground
-                          bordered: true
-                          hasCursor: groupTestHover.hovered
+                          fontFamily: root.fontFamily
+                          iconSize: Style.font.subtitle * 1.5
+                          horizontalPadding: Style.space(5)
+                          verticalPadding: Style.space(2)
+                          enabled: !latencyProc.running
                           opacity: latencyProc.running && !testing ? 0.5 : 1.0
-
-                          Text {
-                            id: groupTestLabel
-                            anchors.centerIn: parent
-                            text: "󰓅"
-                            color: root.foreground
-                            font.family: root.fontFamily
-                            font.pixelSize: Style.font.subtitle * 1.5
-                          }
-
-                          HoverHandler { id: groupTestHover }
-                          PanelToolTip {
-                            visible: groupTestHover.hovered
-                            text: groupTestButton.testing ? "Testing" : "Speed Test"
-                            fontFamily: root.fontFamily
-                          }
-                          TapHandler {
-                            enabled: !latencyProc.running
-                            onTapped: root.startLatency(
-                              subscriptionList.subscription.id, groupList.group.name)
-                          }
+                          Layout.alignment: Qt.AlignVCenter
+                          onClicked: root.startLatency(
+                            subscriptionList.subscription.id, groupList.group.name)
                         }
                       }
 
