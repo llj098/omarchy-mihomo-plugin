@@ -135,7 +135,8 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: "󰖟"
+    text: "M"
+    fontSize: Style.font.title
     dimmed: root.statusLoaded && !root.ready
     active: root.bootstrapBusy
     tooltipText: !root.statusLoaded ? "Mihomo · Checking"
