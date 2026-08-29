@@ -839,19 +839,34 @@ Panel {
                           }
                         }
 
-                        Button {
+                        CursorSurface {
                           id: groupTestButton
                           readonly property bool testing: root.latencyBusyKey === root.groupExpansionKey(
                             subscriptionList.subscription.id, groupList.group.name)
                           visible: groupList.group.directNodeCount > 0
-                          width: visible ? implicitWidth : 0
-                          text: testing ? "Testing" : "Test"
-                          bordered: true
-                          enabled: !latencyProc.running
+                          width: visible ? groupTestLabel.implicitWidth + Style.space(14) : 0
+                          height: groupHeaderSurface.height
                           foreground: root.foreground
-                          fontFamily: root.fontFamily
-                          onClicked: root.startLatency(
-                            subscriptionList.subscription.id, groupList.group.name)
+                          bordered: true
+                          hasCursor: groupTestHover.hovered
+                          opacity: latencyProc.running && !testing ? 0.5 : 1.0
+
+                          Text {
+                            id: groupTestLabel
+                            anchors.centerIn: parent
+                            text: groupTestButton.testing ? "Testing" : "Test"
+                            color: root.foreground
+                            font.family: root.fontFamily
+                            font.pixelSize: Style.font.caption
+                            font.bold: true
+                          }
+
+                          HoverHandler { id: groupTestHover }
+                          TapHandler {
+                            enabled: !latencyProc.running
+                            onTapped: root.startLatency(
+                              subscriptionList.subscription.id, groupList.group.name)
+                          }
                         }
                       }
 

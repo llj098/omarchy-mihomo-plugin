@@ -108,7 +108,7 @@ grep -Fq 'onTapped: root.toggleGroup(' "$PANEL" || fail "group header toggle is 
 grep -Fq 'model: groupList.expanded ? (groupList.group.members || []) : []' "$PANEL" || fail "collapsed groups still instantiate members"
 grep -Fq 'command: [root.latencyScript]' "$PANEL" || fail "latency helper is not wired"
 grep -Fq 'visible: groupList.group.directNodeCount > 0' "$PANEL" || fail "group latency button is not gated by concrete nodes"
-grep -Fq 'onClicked: root.startLatency(' "$PANEL" || fail "group latency button is not clickable"
+grep -Fq 'onTapped: root.startLatency(' "$PANEL" || fail "group latency button is not clickable"
 grep -Fq 'memberSurface.latency.delayMs + " ms"' "$PANEL" || fail "node latency is not rendered beside the node"
 grep -Fq 'height: Math.min(contentHeight, Style.space(320))' "$PANEL" || fail "subscription node lists are not height-bounded"
 grep -Fq 'command: [root.subscriptionControlScript, "start"]' "$PANEL" || fail "node click is not connected to runtime control"
