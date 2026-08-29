@@ -151,11 +151,15 @@ Panel {
     nodeStartProc.running = true
   }
 
-  function stopRuntime() {
-    if (runtimeBusy || !runtimeRunning) return
-    runtimeError = ""
-    runtimeMessage = "Stopping Mihomo"
-    nodeStopProc.running = true
+  function toggleRuntime() {
+    if (runtimeBusy) return
+    if (runtimeRunning) {
+      runtimeError = ""
+      runtimeMessage = "Stopping Mihomo"
+      nodeStopProc.running = true
+    } else if (activeSubscriptionId && activeNodeName) {
+      startNode(activeSubscriptionId, activeNodeName)
+    }
   }
 
   function applyRuntimeSettings() {
@@ -600,15 +604,17 @@ Panel {
           iconOpacity: root.ready ? 1.0 : 0.5
           trailingControl: Component {
             Row {
-              visible: root.runtimeRunning
+              visible: root.activeNodeName !== ""
               spacing: Style.space(6)
 
               Column {
                 id: runtimeTextColumn
+                width: Math.max(Math.min(nodeNameText.implicitWidth, Style.space(150)), endpointText.implicitWidth)
                 spacing: Style.space(2)
 
                 Text {
-                  width: Math.min(implicitWidth, Style.space(150))
+                  id: nodeNameText
+                  width: parent.width
                   text: root.activeNodeName
                   color: root.foreground
                   font.family: root.fontFamily
@@ -617,6 +623,7 @@ Panel {
                 }
 
                 Text {
+                  id: endpointText
                   width: parent.width
                   text: root.runtimeBindAddress + ":" + root.runtimePort
                   color: root.foreground
@@ -631,13 +638,13 @@ Panel {
               ToggleSwitch {
                 checked: root.runtimeRunning
                 foreground: root.foreground
-                enabled: !root.runtimeBusy
+                enabled: !root.runtimeBusy && root.activeSubscriptionId !== "" && root.activeNodeName !== ""
                 anchors.verticalCenter: parent.verticalCenter
-                onToggled: root.stopRuntime()
+                onToggled: root.toggleRuntime()
 
                 PanelToolTip {
                   visible: parent.containsMouse
-                  text: "Stop Mihomo"
+                  text: root.runtimeRunning ? "Stop Mihomo" : "Start last node"
                   fontFamily: root.fontFamily
                 }
               }
@@ -856,14 +863,18 @@ Panel {
                           Text {
                             id: groupTestLabel
                             anchors.centerIn: parent
-                            text: groupTestButton.testing ? "Testing" : "Speed Test"
+                            text: "󰓅"
                             color: root.foreground
                             font.family: root.fontFamily
-                            font.pixelSize: Style.font.caption
-                            font.bold: true
+                            font.pixelSize: Style.font.subtitle * 1.5
                           }
 
                           HoverHandler { id: groupTestHover }
+                          PanelToolTip {
+                            visible: groupTestHover.hovered
+                            text: groupTestButton.testing ? "Testing" : "Speed Test"
+                            fontFamily: root.fontFamily
+                          }
                           TapHandler {
                             enabled: !latencyProc.running
                             onTapped: root.startLatency(
