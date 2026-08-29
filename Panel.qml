@@ -67,13 +67,6 @@ Panel {
   readonly property bool settingsDirty: draftRuntimePort !== savedRuntimePort
     || draftAllowLan !== savedAllowLan
   readonly property string subscriptionFailure: subscriptionError !== "" ? subscriptionError : subscriptionStatusError
-  readonly property string heroMeta: {
-    if (!statusLoaded && statusError === "") return "Checking installation"
-    if (statusError !== "") return "Status unavailable"
-    if (!mihomoInstalled) return "Bootstrap required"
-    if (!geoipReady) return "GeoIP missing"
-    return "Mihomo and GeoIP are ready"
-  }
 
   function refreshStatus() {
     if (!statusProc.running) statusProc.running = true
@@ -522,8 +515,8 @@ Panel {
         PanelHero {
           width: parent.width
           title: "Mihomo"
-          meta: root.heroMeta
-          detail: root.packageVersion
+          meta: ""
+          detail: ""
           foreground: root.foreground
           fontFamily: root.fontFamily
           iconOpacity: root.ready ? 1.0 : 0.5
@@ -557,7 +550,7 @@ Panel {
           }
 
           InfoPair {
-            label: "Runtime"
+            label: root.runtimeRunning ? "Node" : "Runtime"
             value: root.runtimeRunning
               ? (root.activeNodeName + " · " + root.runtimeBindAddress + ":" + root.runtimePort)
               : "Stopped"
@@ -782,7 +775,7 @@ Panel {
           Button {
             visible: !root.showSubscriptionInput
             width: parent.width
-            text: root.subscriptionCount > 0 ? "Add another subscription" : "Add subscription"
+            text: "Add subscription"
             iconText: "󰐕"
             bordered: true
             enabled: !root.subscriptionBusy
@@ -898,6 +891,7 @@ Panel {
           }
 
           Button {
+            visible: root.settingsDirty || settingsApplyProc.running
             width: parent.width
             text: settingsApplyProc.running ? "Applying" : "Apply"
             iconText: settingsApplyProc.running ? "󰦖" : "󰑐"
@@ -954,12 +948,6 @@ Panel {
             text: root.mihomoInstalled ? "INSTALLATION" : "BOOTSTRAP"
             foreground: root.foreground
             fontFamily: root.fontFamily
-          }
-
-          InfoPair {
-            visible: root.mihomoInstalled
-            label: "Binary"
-            value: root.binaryPath || "Unavailable"
           }
 
           InfoPair {
