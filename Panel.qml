@@ -864,6 +864,7 @@ Panel {
                           enabled: !latencyProc.running
                           opacity: latencyProc.running && !testing ? 0.5 : 1.0
                           Layout.alignment: Qt.AlignVCenter
+                          Layout.rightMargin: Style.space(4)
                           onClicked: root.startLatency(
                             subscriptionList.subscription.id, groupList.group.name)
                         }
