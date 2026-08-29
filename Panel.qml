@@ -593,7 +593,7 @@ Panel {
         PanelHero {
           width: parent.width
           title: "Mihomo"
-          meta: ""
+          meta: root.mihomoInstalled ? root.packageVersion : ""
           detail: ""
           foreground: root.foreground
           fontFamily: root.fontFamily
@@ -1112,31 +1112,18 @@ Panel {
           }
         }
         PanelSeparator {
-          visible: root.statusLoaded
+          visible: root.bootstrapAvailable
           foreground: root.foreground
         }
         Column {
-          visible: root.statusLoaded
+          visible: root.bootstrapAvailable
           width: parent.width
           spacing: Style.space(10)
 
           PanelSectionHeader {
-            text: root.mihomoInstalled ? "INSTALLATION" : "BOOTSTRAP"
+            text: "BOOTSTRAP"
             foreground: root.foreground
             fontFamily: root.fontFamily
-          }
-
-          InfoPair {
-            visible: root.mihomoInstalled
-            label: "Package"
-            value: root.packageInstalled ? ("mihomo " + root.packageVersion) : "Local installation"
-          }
-
-          InfoPair {
-            visible: root.mihomoInstalled
-            label: "GeoIP"
-            value: root.geoipReady ? ("Ready · " + root.formatBytes(root.geoipSize)) : "Missing"
-            valueColor: root.geoipReady ? root.dim : root.urgent
           }
 
           CursorSurface {

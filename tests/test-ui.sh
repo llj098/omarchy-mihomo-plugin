@@ -80,10 +80,12 @@ grep -Fq 'command: [root.subscriptionStatusScript]' "$PANEL" || fail "subscripti
 grep -Fq 'stdinEnabled: true' "$PANEL" || fail "subscription source is exposed through argv instead of stdin"
 [[ $(grep -c 'PanelSeparator {' "$PANEL") -ge 3 ]] || fail "installation, settings, and subscriptions are not visibly separated"
 grep -Fq 'text: "CONFIG"' "$PANEL" || fail "config section is missing"
+grep -Fq 'meta: root.mihomoInstalled ? root.packageVersion : ""' "$PANEL" || fail "Mihomo version is not under the title"
+if grep -Fq 'text: "INSTALLATION"' "$PANEL"; then fail "installation section is still rendered"; fi
 python3 - "$PANEL" <<'PY'
 import pathlib, sys
 text = pathlib.Path(sys.argv[1]).read_text()
-markers = ['text: "STATUS"', '("SUBSCRIPTIONS · " + root.subscriptionCount)', 'text: "CONFIG"', 'text: root.mihomoInstalled ? "INSTALLATION" : "BOOTSTRAP"']
+markers = ['text: "STATUS"', '("SUBSCRIPTIONS · " + root.subscriptionCount)', 'text: "CONFIG"', 'text: "BOOTSTRAP"']
 assert [text.index(marker) for marker in markers] == sorted(text.index(marker) for marker in markers)
 PY
 grep -Fq 'from: 1024' "$PANEL" || fail "runtime port minimum is not wired"
