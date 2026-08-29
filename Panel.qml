@@ -179,11 +179,19 @@ Panel {
     return expandedSubscriptions[subscriptionId] === true
   }
 
-  function toggleSubscription(subscriptionId) {
+  function toggleSubscription(subscriptionId, firstGroupName) {
+    var opening = !subscriptionExpanded(subscriptionId)
     var next = {}
     for (var key in expandedSubscriptions) next[key] = expandedSubscriptions[key]
-    next[subscriptionId] = !subscriptionExpanded(subscriptionId)
+    next[subscriptionId] = opening
     expandedSubscriptions = next
+    if (opening && firstGroupName) {
+      var groupKey = groupExpansionKey(subscriptionId, firstGroupName)
+      var groups = {}
+      for (var current in expandedGroups) groups[current] = expandedGroups[current]
+      groups[groupKey] = true
+      expandedGroups = groups
+    }
   }
 
   function groupExpansionKey(subscriptionId, groupName) {
@@ -757,7 +765,10 @@ Panel {
 
                     HoverHandler { id: subscriptionHeaderHover }
                     TapHandler {
-                      onTapped: root.toggleSubscription(subscriptionList.subscription.id)
+                      onTapped: root.toggleSubscription(
+                        subscriptionList.subscription.id,
+                        subscriptionList.subscription.groups.length > 0
+                          ? subscriptionList.subscription.groups[0].name : "")
                     }
                   }
 
