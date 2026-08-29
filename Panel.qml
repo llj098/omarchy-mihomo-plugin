@@ -72,12 +72,6 @@ Panel {
   readonly property bool settingsDirty: draftRuntimePort !== savedRuntimePort
     || draftAllowLan !== savedAllowLan
   readonly property string subscriptionFailure: subscriptionError !== "" ? subscriptionError : subscriptionStatusError
-  readonly property string activeSubscriptionLabel: {
-    for (var i = 0; i < subscriptions.length; i++) {
-      if (subscriptions[i].id === activeSubscriptionId) return String(subscriptions[i].label || "Subscription")
-    }
-    return "Subscription"
-  }
 
   function refreshStatus() {
     if (!statusProc.running) statusProc.running = true
@@ -615,47 +609,36 @@ Panel {
 
                 Text {
                   width: Math.min(implicitWidth, Style.space(150))
-                  text: root.activeSubscriptionLabel + ":" + root.activeNodeName
-                  color: root.dim
+                  text: root.activeNodeName
+                  color: root.foreground
                   font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                  font.bold: true
+                  font.pixelSize: Style.font.bodySmall
                   elide: Text.ElideLeft
                 }
 
                 Text {
                   width: parent.width
                   text: root.runtimeBindAddress + ":" + root.runtimePort
-                  color: root.dim
+                  color: root.foreground
+                  opacity: 0.6
                   font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
+                  font.pixelSize: Style.font.bodySmall
                   horizontalAlignment: Text.AlignRight
                   elide: Text.ElideLeft
                 }
               }
 
-              CursorSurface {
-                width: stopLabel.implicitWidth + Style.space(12)
-                height: runtimeTextColumn.implicitHeight
+              ToggleSwitch {
+                checked: root.runtimeRunning
                 foreground: root.foreground
-                bordered: true
-                hasCursor: stopHover.hovered
+                enabled: !root.runtimeBusy
                 anchors.verticalCenter: parent.verticalCenter
+                onToggled: root.stopRuntime()
 
-                Text {
-                  id: stopLabel
-                  anchors.centerIn: parent
-                  text: nodeStopProc.running ? "…" : "Stop"
-                  color: root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                  font.bold: true
-                }
-
-                HoverHandler { id: stopHover }
-                TapHandler {
-                  enabled: !root.runtimeBusy
-                  onTapped: root.stopRuntime()
+                PanelToolTip {
+                  visible: parent.containsMouse
+                  text: "Stop Mihomo"
+                  fontFamily: root.fontFamily
                 }
               }
             }
@@ -1069,16 +1052,40 @@ Panel {
             fontFamily: root.fontFamily
           }
 
-          NumberField {
-            id: runtimePortField
+          Row {
             width: parent.width
-            label: "Mixed port"
-            from: 1024
-            to: 65535
-            value: root.draftRuntimePort
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            onModified: function(value) { root.draftRuntimePort = value }
+            spacing: Style.space(12)
+
+            NumberField {
+              id: runtimePortField
+              width: parent.width - allowLanControl.width - parent.spacing
+              fieldWidth: width
+              label: "Mixed port"
+              from: 1024
+              to: 65535
+              value: root.draftRuntimePort
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              onModified: function(value) { root.draftRuntimePort = value }
+            }
+
+            Column {
+              id: allowLanControl
+              spacing: Style.spacing.md
+
+              Text {
+                text: "Allow LAN"
+                color: Qt.darker(root.foreground, 1.4)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+              }
+
+              ToggleSwitch {
+                checked: root.draftAllowLan
+                foreground: root.foreground
+                onToggled: root.draftAllowLan = !root.draftAllowLan
+              }
+            }
           }
 
           Text {
@@ -1088,16 +1095,6 @@ Panel {
             color: root.urgent
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
-          }
-
-          Toggle {
-            width: parent.width
-            label: "Allow LAN"
-            description: "Bind the mixed port to all interfaces instead of localhost."
-            checked: root.draftAllowLan
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            onClicked: root.draftAllowLan = !root.draftAllowLan
           }
 
           Button {

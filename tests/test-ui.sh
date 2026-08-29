@@ -70,7 +70,7 @@ jq -e '
 
 # Style is inherited from Omarchy's UI kit, not reproduced with local colors,
 # pixel constants, or custom popup chrome.
-for component in Panel BarIconButton KeyboardPanel PanelKeyCatcher PanelHero CursorSurface Button TextField NumberField Toggle PanelSeparator PanelSectionHeader; do
+for component in Panel BarIconButton KeyboardPanel PanelKeyCatcher PanelHero CursorSurface Button TextField NumberField ToggleSwitch PanelSeparator PanelSectionHeader; do
   grep -Eq "(^|[[:space:]])${component}[[:space:]]*\\{" "$PANEL" || fail "missing Omarchy UI component: $component"
 done
 grep -Fq 'visible: root.bootstrapAvailable' "$PANEL" || fail "Bootstrap visibility is not state-gated"
@@ -91,6 +91,7 @@ PY
 grep -Fq 'from: 1024' "$PANEL" || fail "runtime port minimum is not wired"
 grep -Fq 'to: 65535' "$PANEL" || fail "runtime port maximum is not wired"
 grep -Fq 'draftRuntimePort !== 7890' "$PANEL" || fail "Clash Verge port is not reserved"
+grep -Fq 'id: allowLanControl' "$PANEL" || fail "port and Allow LAN are not in one config row"
 grep -Fq 'checked: root.draftAllowLan' "$PANEL" || fail "Allow LAN draft toggle is not wired"
 grep -Fq 'command: [root.subscriptionControlScript, "apply"]' "$PANEL" || fail "Apply is not wired to runtime control"
 grep -Fq 'visible: root.savedAllowLan' "$PANEL" || fail "UFW review is not always shown for applied Allow LAN"
@@ -113,7 +114,10 @@ grep -Fq 'memberSurface.latency.delayMs + " ms"' "$PANEL" || fail "node latency 
 grep -Fq 'height: Math.min(contentHeight, Style.space(320))' "$PANEL" || fail "subscription node lists are not height-bounded"
 grep -Fq 'command: [root.subscriptionControlScript, "start"]' "$PANEL" || fail "node click is not connected to runtime control"
 grep -Fq 'subscriptionList.subscription.id, memberSurface.member.name)' "$PANEL" || fail "proxy member rows are not clickable"
-grep -Fq 'text: nodeStopProc.running ? "…" : "Stop"' "$PANEL" || fail "compact runtime stop action is missing"
+grep -Fq 'checked: root.runtimeRunning' "$PANEL" || fail "runtime stop switch is missing"
+grep -Fq 'onToggled: root.stopRuntime()' "$PANEL" || fail "runtime stop switch is not wired"
+grep -Fq 'text: root.activeNodeName' "$PANEL" || fail "active node is not shown in the hero"
+grep -Fq 'color: root.foreground' "$PANEL" || fail "hero node does not use the official foreground color"
 grep -Fq 'text: groupTestButton.testing ? "Testing" : "Speed Test"' "$PANEL" || fail "latency action is not named Speed Test"
 grep -Fq 'dimmed: !(root.runtimeRunning || root.runtimeBusy || root.subscriptionBusy || root.bootstrapBusy)' "$PANEL" || fail "bar icon does not dim while inactive"
 grep -Fq 'active: false' "$PANEL" || fail "bar icon uses the red active treatment"
