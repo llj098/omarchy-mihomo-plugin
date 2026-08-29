@@ -536,7 +536,6 @@ Panel {
             }
           }
         }
-
         Text {
           visible: root.statusError !== ""
           width: parent.width
@@ -546,201 +545,23 @@ Panel {
           font.pixelSize: Style.font.bodySmall
           wrapMode: Text.WordWrap
         }
-
-        CursorSurface {
-          visible: root.bootstrapAvailable
-          width: parent.width
-          implicitHeight: missingText.implicitHeight + Style.spacing.rowPaddingX
-          foreground: root.foreground
-
-          Text {
-            id: missingText
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.margins: Style.space(12)
-            text: "Mihomo is not installed. Bootstrap uses signed packages from ranked official mainland mirrors."
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.body
-            wrapMode: Text.WordWrap
-          }
-        }
-
-        Button {
-          visible: root.bootstrapAvailable
-          width: parent.width
-          text: root.bootstrapBusy ? "Bootstrap opened" : "Bootstrap"
-          iconText: root.bootstrapBusy ? "󰦖" : "󰇚"
-          iconSpinning: root.bootstrapBusy
-          bordered: true
-          enabled: !root.bootstrapBusy
-          hasCursor: root.cursorActive
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-          verticalPadding: Style.spacing.controlPaddingY + Style.space(2)
-          onClicked: root.launchBootstrap()
-          onHovered: function(isHovered) {
-            if (isHovered) root.cursorActive = true
-          }
-        }
-
-        PanelSeparator {
-          visible: root.mihomoInstalled
-          foreground: root.foreground
-        }
-
         Column {
           visible: root.mihomoInstalled
           width: parent.width
           spacing: Style.space(10)
 
           PanelSectionHeader {
-            text: "INSTALLATION"
+            text: "STATUS"
             foreground: root.foreground
             fontFamily: root.fontFamily
           }
 
           InfoPair {
-            label: "Binary"
-            value: root.binaryPath || "Unavailable"
-          }
-
-          InfoPair {
-            label: "Package"
-            value: root.packageInstalled ? ("mihomo " + root.packageVersion) : "Local installation"
-          }
-
-          InfoPair {
-            label: "GeoIP"
-            value: root.geoipReady ? ("Ready · " + root.formatBytes(root.geoipSize)) : "Missing"
-            valueColor: root.geoipReady ? root.dim : root.urgent
-          }
-        }
-
-        PanelSeparator {
-          visible: root.mihomoInstalled
-          foreground: root.foreground
-        }
-
-        Column {
-          visible: root.mihomoInstalled
-          width: parent.width
-          spacing: Style.space(10)
-
-          PanelSectionHeader {
-            text: "RUNTIME SETTINGS"
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-          }
-
-          NumberField {
-            id: runtimePortField
-            width: parent.width
-            label: "Mixed port"
-            from: 1024
-            to: 65535
-            value: root.draftRuntimePort
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            onModified: function(value) { root.draftRuntimePort = value }
-          }
-
-          Text {
-            visible: root.draftRuntimePort === 7890
-            width: parent.width
-            text: "Port 7890 is reserved for Clash Verge."
-            color: root.urgent
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-          }
-
-          Toggle {
-            width: parent.width
-            label: "Allow LAN"
-            description: "Bind the mixed port to all interfaces instead of localhost."
-            checked: root.draftAllowLan
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            onClicked: root.draftAllowLan = !root.draftAllowLan
-          }
-
-          Button {
-            width: parent.width
-            text: settingsApplyProc.running ? "Applying" : "Apply"
-            iconText: settingsApplyProc.running ? "󰦖" : "󰑐"
-            iconSpinning: settingsApplyProc.running
-            bordered: true
-            enabled: !root.runtimeBusy && root.settingsValid && root.settingsDirty
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            onClicked: root.applyRuntimeSettings()
-          }
-
-          Button {
-            visible: root.savedAllowLan
-            width: parent.width
-            text: "Review UFW rule for port " + root.savedRuntimePort
-            iconText: "󰒃"
-            bordered: true
-            enabled: !ufwProc.running
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            onClicked: root.reviewUfw()
-          }
-
-          Text {
-            visible: root.settingsMessage !== ""
-            width: parent.width
-            text: root.settingsMessage
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-            wrapMode: Text.WordWrap
-          }
-
-          Text {
-            visible: root.settingsError !== ""
-            width: parent.width
-            text: root.settingsError
-            color: root.urgent
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-            wrapMode: Text.WordWrap
-          }
-        }
-
-        PanelSeparator {
-          visible: root.mihomoInstalled
-          foreground: root.foreground
-        }
-
-        Column {
-          visible: root.mihomoInstalled
-          width: parent.width
-          spacing: Style.space(10)
-
-          PanelSectionHeader {
-            text: root.subscriptionCount > 0 ? ("SUBSCRIPTIONS · " + root.subscriptionCount) : "SUBSCRIPTIONS"
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-          }
-
-          Text {
-            visible: root.subscriptionCount === 0 && root.subscriptionFailure === ""
-            width: parent.width
-            text: "No subscriptions imported"
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.body
-            wrapMode: Text.WordWrap
-          }
-
-          InfoPair {
-            visible: root.runtimeRunning
             label: "Runtime"
-            value: root.activeNodeName + " · " + root.runtimeBindAddress + ":" + root.runtimePort
-            valueColor: root.foreground
+            value: root.runtimeRunning
+              ? (root.activeNodeName + " · " + root.runtimeBindAddress + ":" + root.runtimePort)
+              : "Stopped"
+            valueColor: root.runtimeRunning ? root.foreground : root.dim
           }
 
           Button {
@@ -773,6 +594,31 @@ Panel {
             color: root.urgent
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+        }
+        PanelSeparator {
+          visible: root.mihomoInstalled
+          foreground: root.foreground
+        }
+        Column {
+          visible: root.mihomoInstalled
+          width: parent.width
+          spacing: Style.space(10)
+
+          PanelSectionHeader {
+            text: root.subscriptionCount > 0 ? ("SUBSCRIPTIONS · " + root.subscriptionCount) : "SUBSCRIPTIONS"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+          }
+
+          Text {
+            visible: root.subscriptionCount === 0 && root.subscriptionFailure === ""
+            width: parent.width
+            text: "No subscriptions imported"
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
             wrapMode: Text.WordWrap
           }
 
@@ -1005,6 +851,169 @@ Panel {
             }
           }
         }
+        PanelSeparator {
+          visible: root.mihomoInstalled
+          foreground: root.foreground
+        }
+        Column {
+          visible: root.mihomoInstalled
+          width: parent.width
+          spacing: Style.space(10)
+
+          PanelSectionHeader {
+            text: "CONFIG"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+          }
+
+          NumberField {
+            id: runtimePortField
+            width: parent.width
+            label: "Mixed port"
+            from: 1024
+            to: 65535
+            value: root.draftRuntimePort
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onModified: function(value) { root.draftRuntimePort = value }
+          }
+
+          Text {
+            visible: root.draftRuntimePort === 7890
+            width: parent.width
+            text: "Port 7890 is reserved for Clash Verge."
+            color: root.urgent
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+
+          Toggle {
+            width: parent.width
+            label: "Allow LAN"
+            description: "Bind the mixed port to all interfaces instead of localhost."
+            checked: root.draftAllowLan
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onClicked: root.draftAllowLan = !root.draftAllowLan
+          }
+
+          Button {
+            width: parent.width
+            text: settingsApplyProc.running ? "Applying" : "Apply"
+            iconText: settingsApplyProc.running ? "󰦖" : "󰑐"
+            iconSpinning: settingsApplyProc.running
+            bordered: true
+            enabled: !root.runtimeBusy && root.settingsValid && root.settingsDirty
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onClicked: root.applyRuntimeSettings()
+          }
+
+          Button {
+            visible: root.savedAllowLan
+            width: parent.width
+            text: "Review UFW rule for port " + root.savedRuntimePort
+            iconText: "󰒃"
+            bordered: true
+            enabled: !ufwProc.running
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onClicked: root.reviewUfw()
+          }
+
+          Text {
+            visible: root.settingsMessage !== ""
+            width: parent.width
+            text: root.settingsMessage
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+
+          Text {
+            visible: root.settingsError !== ""
+            width: parent.width
+            text: root.settingsError
+            color: root.urgent
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+        }
+        PanelSeparator {
+          visible: root.statusLoaded
+          foreground: root.foreground
+        }
+        Column {
+          visible: root.statusLoaded
+          width: parent.width
+          spacing: Style.space(10)
+
+          PanelSectionHeader {
+            text: root.mihomoInstalled ? "INSTALLATION" : "BOOTSTRAP"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+          }
+
+          InfoPair {
+            visible: root.mihomoInstalled
+            label: "Binary"
+            value: root.binaryPath || "Unavailable"
+          }
+
+          InfoPair {
+            visible: root.mihomoInstalled
+            label: "Package"
+            value: root.packageInstalled ? ("mihomo " + root.packageVersion) : "Local installation"
+          }
+
+          InfoPair {
+            visible: root.mihomoInstalled
+            label: "GeoIP"
+            value: root.geoipReady ? ("Ready · " + root.formatBytes(root.geoipSize)) : "Missing"
+            valueColor: root.geoipReady ? root.dim : root.urgent
+          }
+
+          CursorSurface {
+            visible: root.bootstrapAvailable
+            width: parent.width
+            implicitHeight: missingText.implicitHeight + Style.spacing.rowPaddingX
+            foreground: root.foreground
+
+            Text {
+              id: missingText
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.margins: Style.space(12)
+              text: "Mihomo is not installed. Bootstrap uses signed packages from ranked official mainland mirrors."
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              wrapMode: Text.WordWrap
+            }
+          }
+
+          Button {
+            visible: root.bootstrapAvailable
+            width: parent.width
+            text: root.bootstrapBusy ? "Bootstrap opened" : "Bootstrap"
+            iconText: root.bootstrapBusy ? "󰦖" : "󰇚"
+            iconSpinning: root.bootstrapBusy
+            bordered: true
+            enabled: !root.bootstrapBusy
+            hasCursor: root.cursorActive
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            verticalPadding: Style.spacing.controlPaddingY + Style.space(2)
+            onClicked: root.launchBootstrap()
+            onHovered: function(isHovered) {
+              if (isHovered) root.cursorActive = true
+            }
+          }
+        }
+
       }
     }
   }

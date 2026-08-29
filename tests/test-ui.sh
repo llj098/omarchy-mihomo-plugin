@@ -78,7 +78,13 @@ grep -Fq 'command: [root.subscriptionImportScript]' "$PANEL" || fail "subscripti
 grep -Fq 'command: [root.subscriptionStatusScript]' "$PANEL" || fail "subscription status is not separated from Bootstrap"
 grep -Fq 'stdinEnabled: true' "$PANEL" || fail "subscription source is exposed through argv instead of stdin"
 [[ $(grep -c 'PanelSeparator {' "$PANEL") -ge 3 ]] || fail "installation, settings, and subscriptions are not visibly separated"
-grep -Fq 'text: "RUNTIME SETTINGS"' "$PANEL" || fail "runtime settings section is missing"
+grep -Fq 'text: "CONFIG"' "$PANEL" || fail "config section is missing"
+python3 - "$PANEL" <<'PY'
+import pathlib, sys
+text = pathlib.Path(sys.argv[1]).read_text()
+markers = ['text: "STATUS"', '("SUBSCRIPTIONS · " + root.subscriptionCount)', 'text: "CONFIG"', 'text: root.mihomoInstalled ? "INSTALLATION" : "BOOTSTRAP"']
+assert [text.index(marker) for marker in markers] == sorted(text.index(marker) for marker in markers)
+PY
 grep -Fq 'from: 1024' "$PANEL" || fail "runtime port minimum is not wired"
 grep -Fq 'to: 65535' "$PANEL" || fail "runtime port maximum is not wired"
 grep -Fq 'draftRuntimePort !== 7890' "$PANEL" || fail "Clash Verge port is not reserved"
