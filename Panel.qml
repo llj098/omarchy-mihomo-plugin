@@ -544,7 +544,7 @@ Panel {
     bar: root.bar
     text: "M"
     fontSize: Style.font.title
-    dimmed: root.statusLoaded && !root.ready
+    dimmed: !(root.runtimeRunning || root.runtimeBusy || root.subscriptionBusy || root.bootstrapBusy)
     active: root.bootstrapBusy || root.subscriptionBusy || root.runtimeBusy || root.runtimeRunning
     tooltipText: root.runtimeBusy ? "Mihomo · Changing runtime"
       : root.runtimeRunning ? ("Mihomo · " + root.activeNodeName + " · " + root.runtimeBindAddress + ":" + root.runtimePort)
@@ -598,6 +598,48 @@ Panel {
           foreground: root.foreground
           fontFamily: root.fontFamily
           iconOpacity: root.ready ? 1.0 : 0.5
+          trailingControl: Component {
+            Row {
+              visible: root.runtimeRunning
+              spacing: Style.space(6)
+
+              Text {
+                width: Math.min(implicitWidth, Style.space(160))
+                text: root.activeNodeName + " · :" + root.runtimePort
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+                elide: Text.ElideLeft
+                anchors.verticalCenter: parent.verticalCenter
+              }
+
+              CursorSurface {
+                width: stopLabel.implicitWidth + Style.space(12)
+                height: stopLabel.implicitHeight + Style.space(6)
+                foreground: root.foreground
+                bordered: true
+                hasCursor: stopHover.hovered
+                anchors.verticalCenter: parent.verticalCenter
+
+                Text {
+                  id: stopLabel
+                  anchors.centerIn: parent
+                  text: nodeStopProc.running ? "…" : "Stop"
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                }
+
+                HoverHandler { id: stopHover }
+                TapHandler {
+                  enabled: !root.runtimeBusy
+                  onTapped: root.stopRuntime()
+                }
+              }
+            }
+          }
           iconComponent: Component {
             Text {
               text: "󰖟"
@@ -616,57 +658,14 @@ Panel {
           font.pixelSize: Style.font.bodySmall
           wrapMode: Text.WordWrap
         }
-        Column {
-          visible: root.mihomoInstalled
+        Text {
+          visible: root.runtimeError !== ""
           width: parent.width
-          spacing: Style.space(10)
-
-          PanelSectionHeader {
-            text: "STATUS"
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-          }
-
-          InfoPair {
-            label: root.runtimeRunning ? "Node" : "Runtime"
-            value: root.runtimeRunning
-              ? (root.activeNodeName + " · " + root.runtimeBindAddress + ":" + root.runtimePort)
-              : "Stopped"
-            valueColor: root.runtimeRunning ? root.foreground : root.dim
-          }
-
-          Button {
-            visible: root.runtimeRunning
-            width: parent.width
-            text: nodeStopProc.running ? "Stopping" : "Stop Mihomo"
-            iconText: nodeStopProc.running ? "󰦖" : "󰓛"
-            iconSpinning: nodeStopProc.running
-            bordered: true
-            enabled: !root.runtimeBusy
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            onClicked: root.stopRuntime()
-          }
-
-          Text {
-            visible: root.runtimeMessage !== ""
-            width: parent.width
-            text: root.runtimeMessage
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-            wrapMode: Text.WordWrap
-          }
-
-          Text {
-            visible: root.runtimeError !== ""
-            width: parent.width
-            text: root.runtimeError
-            color: root.urgent
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-            wrapMode: Text.WordWrap
-          }
+          text: root.runtimeError
+          color: root.urgent
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+          wrapMode: Text.WordWrap
         }
         PanelSeparator {
           visible: root.mihomoInstalled
@@ -854,7 +853,7 @@ Panel {
                           Text {
                             id: groupTestLabel
                             anchors.centerIn: parent
-                            text: groupTestButton.testing ? "Testing" : "Test"
+                            text: groupTestButton.testing ? "Testing" : "Speed Test"
                             color: root.foreground
                             font.family: root.fontFamily
                             font.pixelSize: Style.font.caption

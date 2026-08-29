@@ -85,7 +85,7 @@ if grep -Fq 'text: "INSTALLATION"' "$PANEL"; then fail "installation section is 
 python3 - "$PANEL" <<'PY'
 import pathlib, sys
 text = pathlib.Path(sys.argv[1]).read_text()
-markers = ['text: "STATUS"', '("SUBSCRIPTIONS · " + root.subscriptionCount)', 'text: "CONFIG"', 'text: "BOOTSTRAP"']
+markers = ['("SUBSCRIPTIONS · " + root.subscriptionCount)', 'text: "CONFIG"', 'text: "BOOTSTRAP"']
 assert [text.index(marker) for marker in markers] == sorted(text.index(marker) for marker in markers)
 PY
 grep -Fq 'from: 1024' "$PANEL" || fail "runtime port minimum is not wired"
@@ -113,7 +113,9 @@ grep -Fq 'memberSurface.latency.delayMs + " ms"' "$PANEL" || fail "node latency 
 grep -Fq 'height: Math.min(contentHeight, Style.space(320))' "$PANEL" || fail "subscription node lists are not height-bounded"
 grep -Fq 'command: [root.subscriptionControlScript, "start"]' "$PANEL" || fail "node click is not connected to runtime control"
 grep -Fq 'subscriptionList.subscription.id, memberSurface.member.name)' "$PANEL" || fail "proxy member rows are not clickable"
-grep -Fq 'text: nodeStopProc.running ? "Stopping" : "Stop Mihomo"' "$PANEL" || fail "runtime cannot be stopped from the panel"
+grep -Fq 'text: nodeStopProc.running ? "…" : "Stop"' "$PANEL" || fail "compact runtime stop action is missing"
+grep -Fq 'text: groupTestButton.testing ? "Testing" : "Speed Test"' "$PANEL" || fail "latency action is not named Speed Test"
+grep -Fq 'dimmed: !(root.runtimeRunning || root.runtimeBusy || root.subscriptionBusy || root.bootstrapBusy)' "$PANEL" || fail "bar icon does not dim while inactive"
 grep -Fq 'implicitWidth: button.implicitWidth' "$PANEL" || fail "bar widget does not publish its button width"
 grep -Fq 'implicitHeight: button.implicitHeight' "$PANEL" || fail "bar widget does not publish its button height"
 if grep -Eq '#[[:xdigit:]]{3,8}|font\.pixelSize:[[:space:]]*[0-9]|spacing:[[:space:]]*[0-9]|radius:[[:space:]]*[0-9]' "$PANEL"; then
