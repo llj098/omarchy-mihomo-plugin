@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 BOOTSTRAP="$ROOT/bootstrap/bootstrap.sh"
+MIRROR_FILE="$ROOT/bootstrap/archlinuxcn-mainland-mirrors.txt"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/mihomo-bootstrap-test.XXXXXX")"
 SERVER_PID=""
 
@@ -17,6 +18,12 @@ assert_contains() { grep -Fq -- "$2" "$1" || fail "$1 does not contain: $2"; }
 
 bash -n "$BOOTSTRAP"
 if command -v shellcheck >/dev/null 2>&1; then shellcheck "$BOOTSTRAP"; fi
+mirror_count="$(awk -F '|' '$1 !~ /^#/ && NF == 2 { count++ } END { print count + 0 }' "$MIRROR_FILE")"
+(( mirror_count >= 20 )) || fail "official mainland mirror snapshot is unexpectedly small"
+awk -F '|' '$1 !~ /^#/ && NF == 2 && $2 !~ /^https:\/\// { bad=1 } END { exit bad }' "$MIRROR_FILE" ||
+  fail "mirror snapshot contains a non-HTTPS URL"
+[[ $(awk -F '|' '$1 !~ /^#/ && NF == 2 { print $1 }' "$MIRROR_FILE" | sort | uniq -d | wc -l) == 0 ]] ||
+  fail "mirror snapshot contains duplicate names"
 
 repo="$TMP/repo"
 mkdir -p "$repo/db"
@@ -65,20 +72,39 @@ for _ in {1..100}; do [[ -s $port_file ]] && break; sleep 0.02; done
 port="$(cat "$port_file")"
 base="http://127.0.0.1:$port"
 
+# Manjaro ships a different command under the rankmirrors name. The production
+# target is Omarchy's pacman-contrib implementation; this fixture reproduces its
+# single-URL output contract while the live target test exercises the real one.
+fakebin="$TMP/fakebin"
+mkdir -p "$fakebin"
+cat >"$fakebin/rankmirrors" <<'EOF'
+#!/bin/bash
+url="${!#}"
+curl -fsS --max-time 1 "$url/archlinuxcn.db" -o /dev/null || exit 1
+printf '%s : 0.010\n' "$url"
+EOF
+chmod +x "$fakebin/rankmirrors"
+
 common_env=(
+  PATH="$fakebin:$PATH"
   MIHOMO_BOOTSTRAP_TESTING=1
   MIHOMO_BOOTSTRAP_MIRRORS="dead|http://127.0.0.1:1,local|$base"
   MIHOMO_BOOTSTRAP_CACHE="$TMP/cache"
   MIHOMO_BOOTSTRAP_STATE="$TMP/state"
+  MIHOMO_BOOTSTRAP_RANK_TIMEOUT=0.3
   http_proxy=http://127.0.0.1:9
   https_proxy=http://127.0.0.1:9
 )
 
-env "${common_env[@]}" "$BOOTSTRAP" plan >"$TMP/plan.out" 2>"$TMP/plan.err"
-assert_contains "$TMP/plan.out" "China mirror: local"
+if ! env "${common_env[@]}" "$BOOTSTRAP" plan >"$TMP/plan.out" 2>"$TMP/plan.err"; then
+  cat "$TMP/plan.out" "$TMP/plan.err" >&2
+  fail "mock mirror plan failed"
+fi
+assert_contains "$TMP/plan.out" "Primary mirror: local"
+assert_contains "$TMP/plan.out" "Validated mirrors: local"
 assert_contains "$TMP/plan.out" "mihomo"
 assert_contains "$TMP/plan.out" "1.19.30-1"
-assert_contains "$TMP/plan.err" "mirror probe failed: dead"
+assert_contains "$TMP/plan.out" "rankmirrors: 1/2 reachable"
 
 # Production mode must not accept arbitrary mirror names.
 if "$BOOTSTRAP" plan --mirror evil >"$TMP/evil.out" 2>"$TMP/evil.err"; then
@@ -86,8 +112,6 @@ if "$BOOTSTRAP" plan --mirror evil >"$TMP/evil.out" 2>"$TMP/evil.err"; then
 fi
 assert_contains "$TMP/evil.err" "unknown mirror: evil"
 
-fakebin="$TMP/fakebin"
-mkdir -p "$fakebin"
 cat >"$fakebin/gum" <<'EOF'
 #!/bin/bash
 [[ ${1:-} == style ]] && exit 0
@@ -97,7 +121,7 @@ EOF
 chmod +x "$fakebin/gum"
 : >"$log_file"
 set +e
-script -qec "env PATH=$(printf %q "$fakebin:$PATH") MIHOMO_BOOTSTRAP_TESTING=1 MIHOMO_BOOTSTRAP_MIRRORS=$(printf %q "local|$base") MIHOMO_BOOTSTRAP_CACHE=$(printf %q "$TMP/cancel-cache") MIHOMO_BOOTSTRAP_STATE=$(printf %q "$TMP/cancel-state") $(printf %q "$BOOTSTRAP") install" /dev/null >"$TMP/cancel.out" 2>"$TMP/cancel.err"
+script -qec "env PATH=$(printf %q "$fakebin:$PATH") MIHOMO_BOOTSTRAP_TESTING=1 MIHOMO_BOOTSTRAP_MIRRORS=$(printf %q "local|$base") MIHOMO_BOOTSTRAP_RANK_TIMEOUT=0.3 MIHOMO_BOOTSTRAP_CACHE=$(printf %q "$TMP/cancel-cache") MIHOMO_BOOTSTRAP_STATE=$(printf %q "$TMP/cancel-state") $(printf %q "$BOOTSTRAP") install" /dev/null >"$TMP/cancel.out" 2>"$TMP/cancel.err"
 status=$?
 set -e
 [[ $status == 130 ]] || fail "cancel returned $status instead of 130"

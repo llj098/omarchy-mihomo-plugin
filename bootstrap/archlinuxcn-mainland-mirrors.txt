@@ -1,0 +1,24 @@
+# Snapshot of mainland-China HTTPS entries from:
+# https://github.com/archlinuxcn/mirrorlist-repo
+# Generated upstream: 2026-07-06
+cernet|https://mirrors.cernet.edu.cn/archlinuxcn/$arch
+bfsu|https://mirrors.bfsu.edu.cn/archlinuxcn/$arch
+pku|https://mirrors.pku.edu.cn/archlinuxcn/$arch
+tencent|https://mirrors.cloud.tencent.com/archlinuxcn/$arch
+netease|https://mirrors.163.com/archlinux-cn/$arch
+aliyun|https://mirrors.aliyun.com/archlinuxcn/$arch
+huawei|https://repo.huaweicloud.com/archlinuxcn/$arch
+tuna|https://mirrors.tuna.tsinghua.edu.cn/archlinuxcn/$arch
+ustc|https://mirrors.ustc.edu.cn/archlinuxcn/$arch
+hit|https://mirrors.hit.edu.cn/archlinuxcn/$arch
+jlu|https://mirrors.jlu.edu.cn/archlinuxcn/$arch
+zju|https://mirrors.zju.edu.cn/archlinuxcn/$arch
+sjtu|https://mirror.sjtu.edu.cn/archlinux-cn/$arch
+nju|https://mirrors.nju.edu.cn/archlinuxcn/$arch
+sustech|https://mirrors.sustech.edu.cn/archlinuxcn/$arch
+hust|https://mirrors.hust.edu.cn/archlinuxcn/$arch
+wsyu|https://mirrors.wsyu.edu.cn/archlinuxcn/$arch
+lzu|https://mirror.lzu.edu.cn/archlinuxcn/$arch
+xjtu|https://mirrors.xjtu.edu.cn/archlinuxcn/$arch
+nyist|https://mirror.nyist.edu.cn/archlinuxcn/$arch
+iscas|https://mirror.iscas.ac.cn/archlinuxcn/$arch

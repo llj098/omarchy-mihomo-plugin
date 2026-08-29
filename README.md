@@ -52,14 +52,11 @@ A safe UI/download test uses the same popup but never changes system packages:
 
 ## Network and trust
 
-Before a proxy exists, the script contacts only these documented Chinese university mirrors and explicitly removes inherited proxy variables:
+Before a proxy exists, the script contacts only the HTTPS mainland-China entries in the bundled snapshot of ArchLinuxCN's official [`mirrorlist-repo`](https://github.com/archlinuxcn/mirrorlist-repo), and explicitly removes inherited proxy variables. No mirror is written to `pacman.conf`.
 
-```text
-https://mirrors.tuna.tsinghua.edu.cn/archlinuxcn/x86_64
-https://mirrors.ustc.edu.cn/archlinuxcn/x86_64
-```
+All listed mirrors are measured concurrently with the system `pacman-contrib` `rankmirrors` command. Each measurement has a 10-second timeout, so unreachable mirrors do not make the complete ranking serially slow. The ten fastest responses are metadata-validated; up to three mirrors with identical package versions, filenames, and SHA-256 values become the primary plus fallbacks.
 
-Both repository databases are fetched in parallel. The script chooses the newest candidate set, then the faster mirror when versions match. The unsigned repository database is used only to discover package filenames and metadata. Every downloaded package must pass:
+The required package and signature pairs are downloaded concurrently. Installation remains ordered: keyring first, then GeoIP and Mihomo. The unsigned repository database is used only to discover package filenames and metadata. Every downloaded package must pass:
 
 - the SHA-256 recorded in the repository metadata;
 - a detached OpenPGP signature from the pinned full signer fingerprint;
@@ -89,7 +86,7 @@ The bootstrap:
 ./tests/test-ui.sh
 ```
 
-The local tests use a localhost mirror fixture to verify mirror failover, forced removal of proxy variables, version resolution, arbitrary-mirror rejection, and the confirmation-cancel zero-write path. UI tests cover missing/ready status fixtures, Bootstrap gating and invocation, manifest shape, required Omarchy components, and the absence of hard-coded visual tokens.
+The local tests use a localhost mirror fixture to verify rank-based mirror failover, forced removal of proxy variables, version resolution, arbitrary-mirror rejection, and the confirmation-cancel zero-write path. UI tests cover missing/ready status fixtures, Bootstrap gating and invocation, manifest shape, required Omarchy components, and the absence of hard-coded visual tokens.
 
 For a real China-mirror download/signature test without installation:
 
