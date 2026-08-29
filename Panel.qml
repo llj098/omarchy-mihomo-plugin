@@ -72,6 +72,12 @@ Panel {
   readonly property bool settingsDirty: draftRuntimePort !== savedRuntimePort
     || draftAllowLan !== savedAllowLan
   readonly property string subscriptionFailure: subscriptionError !== "" ? subscriptionError : subscriptionStatusError
+  readonly property string activeSubscriptionLabel: {
+    for (var i = 0; i < subscriptions.length; i++) {
+      if (subscriptions[i].id === activeSubscriptionId) return String(subscriptions[i].label || "Subscription")
+    }
+    return "Subscription"
+  }
 
   function refreshStatus() {
     if (!statusProc.running) statusProc.running = true
@@ -603,20 +609,34 @@ Panel {
               visible: root.runtimeRunning
               spacing: Style.space(6)
 
-              Text {
-                width: Math.min(implicitWidth, Style.space(160))
-                text: root.activeNodeName + " · :" + root.runtimePort
-                color: root.dim
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                font.bold: true
-                elide: Text.ElideLeft
-                anchors.verticalCenter: parent.verticalCenter
+              Column {
+                id: runtimeTextColumn
+                spacing: Style.space(2)
+
+                Text {
+                  width: Math.min(implicitWidth, Style.space(150))
+                  text: root.activeSubscriptionLabel + ":" + root.activeNodeName
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                  elide: Text.ElideLeft
+                }
+
+                Text {
+                  width: parent.width
+                  text: root.runtimeBindAddress + ":" + root.runtimePort
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  horizontalAlignment: Text.AlignRight
+                  elide: Text.ElideLeft
+                }
               }
 
               CursorSurface {
                 width: stopLabel.implicitWidth + Style.space(12)
-                height: stopLabel.implicitHeight + Style.space(6)
+                height: runtimeTextColumn.implicitHeight
                 foreground: root.foreground
                 bordered: true
                 hasCursor: stopHover.hovered
