@@ -17,6 +17,7 @@ Panel {
   readonly property string subscriptionStatusScript: pluginDir + "/subscription/status.sh"
   readonly property string subscriptionImportScript: pluginDir + "/subscription/import.sh"
   readonly property string subscriptionControlScript: pluginDir + "/subscription/control.py"
+  readonly property string latencyScript: pluginDir + "/subscription/latency.py"
   readonly property string ufwScript: pluginDir + "/subscription/ufw.sh"
 
   property bool statusLoaded: false
@@ -48,6 +49,9 @@ Panel {
   property string settingsMessage: ""
   property var expandedSubscriptions: ({})
   property var expandedGroups: ({})
+  property var latencyResults: ({})
+  property string latencyBusyKey: ""
+  property string latencyError: ""
   property string runtimeError: ""
   property string runtimeMessage: ""
   property string subscriptionError: ""
@@ -196,6 +200,22 @@ Panel {
     for (var current in expandedGroups) next[current] = expandedGroups[current]
     next[key] = !groupExpanded(subscriptionId, groupName)
     expandedGroups = next
+  }
+
+  function latencyKey(subscriptionId, groupName, nodeName) {
+    return subscriptionId + "\u001f" + groupName + "\u001f" + nodeName
+  }
+
+  function nodeLatency(subscriptionId, groupName, nodeName) {
+    return latencyResults[latencyKey(subscriptionId, groupName, nodeName)] || null
+  }
+
+  function startLatency(subscriptionId, groupName) {
+    if (latencyProc.running) return
+    latencyError = ""
+    latencyBusyKey = groupExpansionKey(subscriptionId, groupName)
+    latencyProc.pendingRequest = JSON.stringify({subscriptionId: subscriptionId, groupName: groupName})
+    latencyProc.running = true
   }
 
   function formatBytes(bytes) {
@@ -457,6 +477,39 @@ Panel {
         root.runtimeError = String(nodeStopStderr.text || "Could not stop Mihomo").trim()
       }
       root.refreshRuntime()
+    }
+  }
+
+  Process {
+    id: latencyProc
+    property string pendingRequest: ""
+    command: [root.latencyScript]
+    stdinEnabled: true
+    stdout: StdioCollector { id: latencyStdout; waitForEnd: true }
+    stderr: StdioCollector { id: latencyStderr; waitForEnd: true }
+    onStarted: {
+      write(pendingRequest + "\n")
+      pendingRequest = ""
+    }
+    onExited: function(exitCode) {
+      if (exitCode === 0) {
+        try {
+          var result = JSON.parse(String(latencyStdout.text || "{}"))
+          var next = {}
+          for (var key in root.latencyResults) next[key] = root.latencyResults[key]
+          for (var i = 0; i < result.results.length; i++) {
+            var item = result.results[i]
+            next[root.latencyKey(result.subscriptionId, result.groupName, item.name)] = item
+          }
+          root.latencyResults = next
+          root.latencyError = ""
+        } catch (error) {
+          root.latencyError = "Latency result could not be read"
+        }
+      } else {
+        root.latencyError = String(latencyStderr.text || "Latency test failed").trim()
+      }
+      root.latencyBusyKey = ""
     }
   }
 
@@ -732,41 +785,61 @@ Panel {
                       width: subscriptionList.width
                       spacing: Style.space(4)
 
-                      CursorSurface {
-                        id: groupHeaderSurface
+                      Row {
                         width: parent.width
-                        height: Math.max(groupHeader.implicitHeight, groupMeta.implicitHeight)
-                          + Style.spacing.controlGap
-                        foreground: root.foreground
-                        hasCursor: groupHeaderHover.hovered
+                        spacing: Style.space(6)
 
-                        PanelSectionHeader {
-                          id: groupHeader
-                          text: groupList.group.name
+                        CursorSurface {
+                          id: groupHeaderSurface
+                          width: parent.width - groupTestButton.width - parent.spacing
+                          height: Math.max(groupHeader.implicitHeight, groupMeta.implicitHeight)
+                            + Style.spacing.controlGap
+                          foreground: root.foreground
+                          hasCursor: groupHeaderHover.hovered
+
+                          PanelSectionHeader {
+                            id: groupHeader
+                            text: groupList.group.name
+                            foreground: root.foreground
+                            fontFamily: root.fontFamily
+                            anchors.left: parent.left
+                            anchors.leftMargin: Style.space(14)
+                            anchors.verticalCenter: parent.verticalCenter
+                          }
+
+                          Text {
+                            id: groupMeta
+                            text: (groupList.expanded ? "▾ " : "▸ ")
+                              + groupList.group.type.toUpperCase() + " · "
+                              + groupList.group.memberCount
+                            color: root.dim
+                            font.family: root.fontFamily
+                            font.pixelSize: Style.font.caption
+                            font.bold: true
+                            anchors.right: parent.right
+                            anchors.rightMargin: Style.space(6)
+                            anchors.verticalCenter: parent.verticalCenter
+                          }
+
+                          HoverHandler { id: groupHeaderHover }
+                          TapHandler {
+                            onTapped: root.toggleGroup(
+                              subscriptionList.subscription.id, groupList.group.name)
+                          }
+                        }
+
+                        Button {
+                          id: groupTestButton
+                          readonly property bool testing: root.latencyBusyKey === root.groupExpansionKey(
+                            subscriptionList.subscription.id, groupList.group.name)
+                          visible: groupList.group.directNodeCount > 0
+                          width: visible ? implicitWidth : 0
+                          text: testing ? "Testing" : "Test"
+                          bordered: true
+                          enabled: !latencyProc.running
                           foreground: root.foreground
                           fontFamily: root.fontFamily
-                          anchors.left: parent.left
-                          anchors.leftMargin: Style.space(14)
-                          anchors.verticalCenter: parent.verticalCenter
-                        }
-
-                        Text {
-                          id: groupMeta
-                          text: (groupList.expanded ? "▾ " : "▸ ")
-                            + groupList.group.type.toUpperCase() + " · "
-                            + groupList.group.memberCount
-                          color: root.dim
-                          font.family: root.fontFamily
-                          font.pixelSize: Style.font.caption
-                          font.bold: true
-                          anchors.right: parent.right
-                          anchors.rightMargin: Style.space(6)
-                          anchors.verticalCenter: parent.verticalCenter
-                        }
-
-                        HoverHandler { id: groupHeaderHover }
-                        TapHandler {
-                          onTapped: root.toggleGroup(
+                          onClicked: root.startLatency(
                             subscriptionList.subscription.id, groupList.group.name)
                         }
                       }
@@ -779,6 +852,8 @@ Panel {
                           required property var modelData
                           readonly property var member: modelData
                           readonly property bool isProxy: member.kind === "proxy"
+                          readonly property var latency: root.nodeLatency(
+                            subscriptionList.subscription.id, groupList.group.name, member.name)
                           width: groupList.width
                           height: memberPair.implicitHeight + Style.spacing.controlGap
                           foreground: root.foreground
@@ -797,9 +872,15 @@ Panel {
                             anchors.leftMargin: Style.space(22)
                             anchors.rightMargin: Style.space(6)
                             label: memberSurface.member.name
-                            value: memberSurface.current
-                              ? (memberSurface.member.type.toUpperCase() + " · ACTIVE")
-                              : memberSurface.member.type.toUpperCase()
+                            value: {
+                              var parts = [memberSurface.member.type.toUpperCase()]
+                              if (memberSurface.current) parts.push("ACTIVE")
+                              if (memberSurface.latency) {
+                                parts.push(memberSurface.latency.status === "ok"
+                                  ? (memberSurface.latency.delayMs + " ms") : "TIMEOUT")
+                              }
+                              return parts.join(" · ")
+                            }
                           }
 
                           HoverHandler { id: memberHover }
@@ -824,6 +905,16 @@ Panel {
                 }
               }
             }
+          }
+
+          Text {
+            visible: root.latencyError !== ""
+            width: parent.width
+            text: root.latencyError
+            color: root.urgent
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
           }
 
           Text {

@@ -7,6 +7,7 @@ SUBSCRIPTION_IMPORT="$ROOT/subscription/import.sh"
 SUBSCRIPTION_STATUS="$ROOT/subscription/status.sh"
 SUBSCRIPTION_STATUS_PY="$ROOT/subscription/status.py"
 SUBSCRIPTION_CONTROL="$ROOT/subscription/control.py"
+LATENCY_HELPER="$ROOT/subscription/latency.py"
 UFW_HELPER="$ROOT/subscription/ufw.sh"
 PANEL="$ROOT/Panel.qml"
 MANIFEST="$ROOT/manifest.json"
@@ -20,14 +21,14 @@ bash -n "$SUBSCRIPTION_IMPORT"
 bash -n "$SUBSCRIPTION_STATUS"
 bash -n "$UFW_HELPER"
 python3 -c 'import ast, pathlib, sys; [ast.parse(pathlib.Path(path).read_text()) for path in sys.argv[1:]]' \
-  "$SUBSCRIPTION_STATUS_PY" "$SUBSCRIPTION_CONTROL"
+  "$SUBSCRIPTION_STATUS_PY" "$SUBSCRIPTION_CONTROL" "$LATENCY_HELPER"
 if command -v shellcheck >/dev/null 2>&1; then
   shellcheck "$STATUS" "$SUBSCRIPTION_IMPORT" "$SUBSCRIPTION_STATUS" "$UFW_HELPER"
 fi
 jq -e '
   .schemaVersion == 1
   and .id == "fatlj.mihomo"
-  and .version == "0.6.0"
+  and .version == "0.7.0"
   and (.kinds | index("bar-widget") != null)
   and .entryPoints.barWidget == "Panel.qml"
   and .barWidget.defaultSection == "right"
@@ -102,6 +103,10 @@ grep -Fq 'model: subscriptionList.expanded ? (subscriptionList.subscription.grou
 grep -Fq 'readonly property bool expanded: root.groupExpanded(' "$PANEL" || fail "group default-collapsed state is missing"
 grep -Fq 'onTapped: root.toggleGroup(' "$PANEL" || fail "group header toggle is not wired"
 grep -Fq 'model: groupList.expanded ? (groupList.group.members || []) : []' "$PANEL" || fail "collapsed groups still instantiate members"
+grep -Fq 'command: [root.latencyScript]' "$PANEL" || fail "latency helper is not wired"
+grep -Fq 'visible: groupList.group.directNodeCount > 0' "$PANEL" || fail "group latency button is not gated by concrete nodes"
+grep -Fq 'onClicked: root.startLatency(' "$PANEL" || fail "group latency button is not clickable"
+grep -Fq 'memberSurface.latency.delayMs + " ms"' "$PANEL" || fail "node latency is not rendered beside the node"
 grep -Fq 'height: Math.min(contentHeight, Style.space(320))' "$PANEL" || fail "subscription node lists are not height-bounded"
 grep -Fq 'command: [root.subscriptionControlScript, "start"]' "$PANEL" || fail "node click is not connected to runtime control"
 grep -Fq 'subscriptionList.subscription.id, memberSurface.member.name)' "$PANEL" || fail "proxy member rows are not clickable"
