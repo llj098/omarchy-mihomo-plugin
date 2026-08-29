@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "fatlj.mihomo",
+  "name": "Mihomo",
+  "version": "0.1.0",
+  "author": "fatlj",
+  "description": "Bootstrap and manage Mihomo from a native Omarchy bar panel.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Mihomo",
+    "description": "Mihomo installation and status",
+    "category": "Network",
+    "defaultSection": "right",
+    "allowMultiple": false
+  }
+}

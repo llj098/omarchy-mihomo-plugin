@@ -1,8 +1,27 @@
 # Omarchy Mihomo Plugin
 
-Only the first, standalone feature exists so far: a pure Bash bootstrap for installing the ArchLinuxCN `mihomo` and `clash-geoip` packages on Omarchy without an existing proxy.
+The first feature is a native Omarchy bar panel backed by a pure Bash bootstrap for installing the ArchLinuxCN `mihomo` and `clash-geoip` packages without an existing proxy.
 
-No QML panel, subscription handling, Mihomo configuration, or service control is implemented.
+The panel deliberately reuses Omarchy's own `Panel`, `BarIconButton`, `KeyboardPanel`, `PanelHero`, `CursorSurface`, `Button`, spacing, font, border, and color tokens. It does not copy or approximate the system theme. When `mihomo` is absent, the panel shows a **Bootstrap** button that opens the reviewed installation flow in Omarchy's floating terminal. An installed system shows the binary, package, and GeoIP state instead.
+
+Subscription handling, Mihomo configuration, proxy controls, and service control are not implemented yet.
+
+## Plugin UI
+
+Install the repository as `~/.config/omarchy/plugins/fatlj.mihomo`, rescan plugins, and place it next to the network widget:
+
+```bash
+omarchy-shell shell rescanPlugins
+omarchy plugin enable fatlj.mihomo --before omarchy.network
+```
+
+The status helper is read-only:
+
+```bash
+./bootstrap/status.sh | jq .
+```
+
+It checks the executable, pacman package, and `Country.mmdb`. The bar panel refreshes on open, every 30 seconds while open, and every two seconds while a bootstrap popup is running.
 
 ## Interactive Omarchy flow
 
@@ -67,9 +86,10 @@ The bootstrap:
 
 ```bash
 ./tests/test-bootstrap.sh
+./tests/test-ui.sh
 ```
 
-The local test uses a localhost mirror fixture to verify mirror failover, forced removal of proxy variables, version resolution, arbitrary-mirror rejection, and the confirmation-cancel zero-write path.
+The local tests use a localhost mirror fixture to verify mirror failover, forced removal of proxy variables, version resolution, arbitrary-mirror rejection, and the confirmation-cancel zero-write path. UI tests cover missing/ready status fixtures, Bootstrap gating and invocation, manifest shape, required Omarchy components, and the absence of hard-coded visual tokens.
 
 For a real China-mirror download/signature test without installation:
 
