@@ -13,6 +13,8 @@ Panel {
   readonly property string pluginDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/fatlj.mihomo"
   readonly property string statusScript: pluginDir + "/bootstrap/status.sh"
   readonly property string bootstrapScript: pluginDir + "/bootstrap/bootstrap.sh"
+  readonly property string subscriptionStatusScript: pluginDir + "/subscription/status.sh"
+  readonly property string subscriptionImportScript: pluginDir + "/subscription/import.sh"
 
   property bool statusLoaded: false
   property string statusError: ""
@@ -26,6 +28,12 @@ Panel {
   property string geoipPath: ""
   property real geoipSize: 0
   property bool cursorActive: false
+  property var subscriptions: []
+  property int subscriptionCount: 0
+  property string subscriptionError: ""
+  property string subscriptionStatusError: ""
+  property string subscriptionMessage: ""
+  property bool showSubscriptionInput: false
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color dim: Qt.darker(foreground, 1.4)
@@ -33,6 +41,8 @@ Panel {
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property bool bootstrapAvailable: statusLoaded && !mihomoInstalled
   readonly property bool bootstrapBusy: bootstrapProc.running
+  readonly property bool subscriptionBusy: subscriptionImportProc.running
+  readonly property string subscriptionFailure: subscriptionError !== "" ? subscriptionError : subscriptionStatusError
   readonly property string heroMeta: {
     if (!statusLoaded && statusError === "") return "Checking installation"
     if (statusError !== "") return "Status unavailable"
@@ -43,6 +53,10 @@ Panel {
 
   function refreshStatus() {
     if (!statusProc.running) statusProc.running = true
+  }
+
+  function refreshSubscriptions() {
+    if (!subscriptionStatusProc.running) subscriptionStatusProc.running = true
   }
 
   function applyStatus(raw) {
@@ -64,6 +78,17 @@ Panel {
     }
   }
 
+  function applySubscriptionStatus(raw) {
+    try {
+      var parsed = JSON.parse(String(raw || "{}"))
+      subscriptions = Array.isArray(parsed.subscriptions) ? parsed.subscriptions : []
+      subscriptionCount = Number(parsed.count || 0)
+      subscriptionStatusError = ""
+    } catch (error) {
+      subscriptionStatusError = "Could not read subscription status"
+    }
+  }
+
   function formatBytes(bytes) {
     var value = Number(bytes || 0)
     if (value < 1024) return value + " B"
@@ -78,16 +103,48 @@ Panel {
     close()
   }
 
+  function openSubscriptionInput() {
+    if (subscriptionBusy) return
+    subscriptionError = ""
+    subscriptionMessage = ""
+    showSubscriptionInput = true
+    Qt.callLater(function() { subscriptionInput.forceActiveFocus() })
+  }
+
+  function cancelSubscriptionInput() {
+    subscriptionInput.text = ""
+    subscriptionInput.focus = false
+    showSubscriptionInput = false
+    subscriptionError = ""
+  }
+
+  function importSubscription() {
+    var source = String(subscriptionInput.text || "")
+    if (source.length === 0 || subscriptionBusy) {
+      if (source.length === 0) subscriptionError = "Enter a local file path or HTTP(S) URL"
+      return
+    }
+    subscriptionError = ""
+    subscriptionMessage = ""
+    subscriptionImportProc.pendingSource = source
+    subscriptionInput.focus = false
+    subscriptionImportProc.running = true
+  }
+
   onOpenedChanged: {
     if (opened) {
       cursorActive = bootstrapAvailable
       refreshStatus()
+      refreshSubscriptions()
     }
   }
 
   onBootstrapAvailableChanged: if (!bootstrapAvailable) cursorActive = false
 
-  Component.onCompleted: refreshStatus()
+  Component.onCompleted: {
+    refreshStatus()
+    refreshSubscriptions()
+  }
 
   Process {
     id: statusProc
@@ -118,11 +175,66 @@ Panel {
     }
   }
 
+  Process {
+    id: subscriptionStatusProc
+    command: [root.subscriptionStatusScript]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.applySubscriptionStatus(text)
+    }
+    stderr: StdioCollector {
+      id: subscriptionStatusStderr
+      waitForEnd: true
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0)
+        root.subscriptionStatusError = String(subscriptionStatusStderr.text || "Subscription status check failed").trim()
+    }
+  }
+
+  Process {
+    id: subscriptionImportProc
+    property string pendingSource: ""
+    command: [root.subscriptionImportScript]
+    stdinEnabled: true
+    stdout: StdioCollector {
+      id: subscriptionImportStdout
+      waitForEnd: true
+    }
+    stderr: StdioCollector {
+      id: subscriptionImportStderr
+      waitForEnd: true
+    }
+    onStarted: {
+      write(pendingSource + "\n")
+      pendingSource = ""
+    }
+    onExited: function(exitCode) {
+      if (exitCode === 0) {
+        try {
+          var result = JSON.parse(String(subscriptionImportStdout.text || "{}"))
+          root.subscriptionMessage = result.action === "updated" ? "Subscription updated" : "Subscription added"
+          root.subscriptionError = ""
+          subscriptionInput.text = ""
+          root.showSubscriptionInput = false
+        } catch (error) {
+          root.subscriptionError = "Subscription was imported but its result could not be read"
+        }
+      } else {
+        root.subscriptionError = String(subscriptionImportStderr.text || "Subscription import failed").trim()
+      }
+      root.refreshSubscriptions()
+    }
+  }
+
   Timer {
     interval: bootstrapProc.running ? 2000 : 30000
     running: root.opened || bootstrapProc.running
     repeat: true
-    onTriggered: root.refreshStatus()
+    onTriggered: {
+      root.refreshStatus()
+      root.refreshSubscriptions()
+    }
   }
 
   // Bar widgets must publish the button's implicit geometry. Anchoring the
@@ -138,8 +250,9 @@ Panel {
     text: "M"
     fontSize: Style.font.title
     dimmed: root.statusLoaded && !root.ready
-    active: root.bootstrapBusy
-    tooltipText: !root.statusLoaded ? "Mihomo · Checking"
+    active: root.bootstrapBusy || root.subscriptionBusy
+    tooltipText: root.subscriptionBusy ? "Mihomo · Importing subscription"
+      : !root.statusLoaded ? "Mihomo · Checking"
       : root.ready ? "Mihomo · Ready"
       : "Mihomo · Bootstrap required"
     onPressed: function(buttonCode) {
@@ -163,6 +276,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
+      blocked: subscriptionInput.activeFocus
       onMoveRequested: function(dx, dy) {
         if (root.bootstrapAvailable) root.cursorActive = true
       }
@@ -217,7 +331,7 @@ Panel {
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             anchors.margins: Style.space(12)
-            text: "Mihomo is not installed. Bootstrap uses signed packages from the TUNA and USTC China mirrors."
+            text: "Mihomo is not installed. Bootstrap uses signed packages from ranked official mainland mirrors."
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
@@ -273,6 +387,144 @@ Panel {
             label: "GeoIP"
             value: root.geoipReady ? ("Ready · " + root.formatBytes(root.geoipSize)) : "Missing"
             valueColor: root.geoipReady ? root.dim : root.urgent
+          }
+        }
+
+        PanelSeparator {
+          visible: root.mihomoInstalled
+          foreground: root.foreground
+        }
+
+        Column {
+          visible: root.mihomoInstalled
+          width: parent.width
+          spacing: Style.space(10)
+
+          PanelSectionHeader {
+            text: root.subscriptionCount > 0 ? ("SUBSCRIPTIONS · " + root.subscriptionCount) : "SUBSCRIPTIONS"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+          }
+
+          Text {
+            visible: root.subscriptionCount === 0 && root.subscriptionFailure === ""
+            width: parent.width
+            text: "No subscriptions imported"
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+            wrapMode: Text.WordWrap
+          }
+
+          Repeater {
+            model: root.subscriptions.slice(0, 5)
+
+            delegate: InfoPair {
+              required property var modelData
+              label: modelData.label
+              value: root.formatBytes(modelData.bytes) + " · " + modelData.modified
+            }
+          }
+
+          Text {
+            visible: root.subscriptionCount > 5
+            width: parent.width
+            text: "+ " + (root.subscriptionCount - 5) + " more"
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+
+          Text {
+            visible: root.subscriptionMessage !== ""
+            width: parent.width
+            text: root.subscriptionMessage
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+
+          Text {
+            visible: root.subscriptionFailure !== ""
+            width: parent.width
+            text: root.subscriptionFailure
+            color: root.urgent
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+
+          Button {
+            visible: !root.showSubscriptionInput
+            width: parent.width
+            text: root.subscriptionCount > 0 ? "Add another subscription" : "Add subscription"
+            iconText: "󰐕"
+            bordered: true
+            enabled: !root.subscriptionBusy
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onClicked: root.openSubscriptionInput()
+          }
+
+          Column {
+            visible: root.showSubscriptionInput
+            width: parent.width
+            spacing: Style.space(8)
+
+            TextField {
+              id: subscriptionInput
+              width: parent.width
+              enabled: !root.subscriptionBusy
+              placeholderText: "Local path or HTTP(S) URL"
+              foreground: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              onAccepted: root.importSubscription()
+              Keys.onPressed: function(event) {
+                if (event.key === Qt.Key_Escape) {
+                  root.cancelSubscriptionInput()
+                  event.accepted = true
+                }
+              }
+            }
+
+            Text {
+              visible: subscriptionInput.text.startsWith("http://")
+              width: parent.width
+              text: "Plain HTTP does not encrypt the subscription address or content."
+              color: root.urgent
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              wrapMode: Text.WordWrap
+            }
+
+            Row {
+              width: parent.width
+              spacing: Style.space(8)
+
+              Button {
+                width: (parent.width - parent.spacing) / 2
+                text: "Cancel"
+                bordered: true
+                enabled: !root.subscriptionBusy
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                onClicked: root.cancelSubscriptionInput()
+              }
+
+              Button {
+                width: (parent.width - parent.spacing) / 2
+                text: root.subscriptionBusy ? "Importing" : "Import"
+                iconText: root.subscriptionBusy ? "󰦖" : "󰋺"
+                iconSpinning: root.subscriptionBusy
+                bordered: true
+                enabled: !root.subscriptionBusy && subscriptionInput.text.length > 0
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                onClicked: root.importSubscription()
+              }
+            }
           }
         }
       }

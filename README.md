@@ -1,10 +1,10 @@
 # Omarchy Mihomo Plugin
 
-The first feature is a native Omarchy bar panel backed by a pure Bash bootstrap for installing the ArchLinuxCN `mihomo` and `clash-geoip` packages without an existing proxy.
+This is a native Omarchy bar panel backed by a pure Bash bootstrap for installing the ArchLinuxCN `mihomo` and `clash-geoip` packages, plus a separate lightweight subscription importer.
 
 The panel deliberately reuses Omarchy's own `Panel`, `BarIconButton`, `KeyboardPanel`, `PanelHero`, `CursorSurface`, `Button`, spacing, font, border, and color tokens. It does not copy or approximate the system theme. When `mihomo` is absent, the panel shows a **Bootstrap** button that opens the reviewed installation flow in Omarchy's floating terminal. An installed system shows the binary, package, and GeoIP state instead.
 
-Subscription handling, Mihomo configuration, proxy controls, and service control are not implemented yet.
+Proxy controls and service control are intentionally not implemented yet.
 
 ## Plugin UI
 
@@ -39,6 +39,36 @@ A safe UI/download test uses the same popup but never changes system packages:
 ./bootstrap/bootstrap.sh launch --download-only
 ```
 
+## Subscription import
+
+The installation and subscription sections are separated with Omarchy's native `PanelSeparator`. Click **Add subscription**, enter one value, and press Enter or **Import**:
+
+- `http://` or `https://` is downloaded with curl;
+- every other value is treated as an absolute local path or a path beginning with `~/`.
+
+The importer does not add, remove, or bypass proxy settings. Curl honors the user's existing environment and curl configuration; without a configured proxy it connects directly. Sources are passed from QML over stdin rather than argv.
+
+Subscriptions are stored under the plugin directory:
+
+```text
+data/subscriptions/url-<sha256-of-exact-url>/
+  config.yaml
+  source.url
+data/subscriptions/local-<timestamp>-<random>/
+  config.yaml
+```
+
+The complete URL is saved in `source.url` with mode 0600 but is never returned by the status helper. Importing the exact URL again atomically updates its existing entry. Local files deliberately have no source metadata or deduplication and create a new entry each time. Entries and the data directory use modes 0600 and 0700 respectively.
+
+Downloads and local copies are limited to 8 MiB. Every candidate must pass `mihomo -t` in an isolated temporary directory before an atomic commit; a failed import leaves the previous subscription unchanged. The importer accepts complete Mihomo/Clash YAML configurations, not encoded node lists requiring an online converter.
+
+The helpers can also be used directly:
+
+```bash
+printf '%s\n' 'https://provider.example/config' | ./subscription/import.sh
+./subscription/status.sh | jq .
+```
+
 ## Commands
 
 ```bash
@@ -52,7 +82,7 @@ A safe UI/download test uses the same popup but never changes system packages:
 
 ## Network and trust
 
-Before a proxy exists, the script contacts only the HTTPS mainland-China entries in the bundled snapshot of ArchLinuxCN's official [`mirrorlist-repo`](https://github.com/archlinuxcn/mirrorlist-repo), and explicitly removes inherited proxy variables. No mirror is written to `pacman.conf`.
+Before a proxy exists, the **Bootstrap script** contacts only the HTTPS mainland-China entries in the bundled snapshot of ArchLinuxCN's official [`mirrorlist-repo`](https://github.com/archlinuxcn/mirrorlist-repo), and explicitly removes inherited proxy variables. No mirror is written to `pacman.conf`. This policy is Bootstrap-specific; the separate subscription importer preserves user network settings.
 
 All listed mirrors are measured concurrently with the system `pacman-contrib` `rankmirrors` command. Each measurement has a 10-second timeout, so unreachable mirrors do not make the complete ranking serially slow. The ten fastest responses are metadata-validated; up to three mirrors with identical package versions, filenames, and SHA-256 values become the primary plus fallbacks.
 
@@ -74,7 +104,7 @@ The bootstrap:
 - supports Omarchy/Arch x86_64;
 - installs `archlinuxcn-keyring`, `clash-geoip`, and `mihomo` when required;
 - verifies Mihomo with a temporary `GEOIP,CN,DIRECT` configuration;
-- does not download a subscription;
+- imports validated local or HTTP(S) subscription configurations without activating them;
 - does not enable or start a service;
 - does not modify Clash Verge;
 - is serialized with `flock` and is idempotent for current/newer installed versions.
@@ -83,10 +113,11 @@ The bootstrap:
 
 ```bash
 ./tests/test-bootstrap.sh
+./tests/test-subscription.sh
 ./tests/test-ui.sh
 ```
 
-The local tests use a localhost mirror fixture to verify rank-based mirror failover, forced removal of proxy variables, version resolution, arbitrary-mirror rejection, and the confirmation-cancel zero-write path. UI tests cover missing/ready status fixtures, Bootstrap gating and invocation, manifest shape, required Omarchy components, and the absence of hard-coded visual tokens.
+The local tests use localhost fixtures to verify rank-based Bootstrap failover and proxy removal, subscription proxy inheritance, exact-URL deduplication, unrestricted local-file duplication, permissions, validation failure atomicity, and UI separation. UI tests also cover missing/ready installation states, manifest shape, required Omarchy components, and the absence of hard-coded visual tokens.
 
 For a real China-mirror download/signature test without installation:
 

@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "fatlj.mihomo",
   "name": "Mihomo",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "fatlj",
-  "description": "Bootstrap and manage Mihomo from a native Omarchy bar panel.",
+  "description": "Bootstrap Mihomo and import validated subscriptions from a native Omarchy bar panel.",
   "kinds": [
     "bar-widget"
   ],
@@ -13,7 +13,7 @@
   },
   "barWidget": {
     "displayName": "Mihomo",
-    "description": "Mihomo installation and status",
+    "description": "Mihomo installation and subscription management",
     "category": "Network",
     "defaultSection": "right",
     "allowMultiple": false
