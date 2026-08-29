@@ -116,6 +116,7 @@ grep -Fq 'subscriptionList.subscription.id, memberSurface.member.name)' "$PANEL"
 grep -Fq 'text: nodeStopProc.running ? "…" : "Stop"' "$PANEL" || fail "compact runtime stop action is missing"
 grep -Fq 'text: groupTestButton.testing ? "Testing" : "Speed Test"' "$PANEL" || fail "latency action is not named Speed Test"
 grep -Fq 'dimmed: !(root.runtimeRunning || root.runtimeBusy || root.subscriptionBusy || root.bootstrapBusy)' "$PANEL" || fail "bar icon does not dim while inactive"
+grep -Fq 'active: false' "$PANEL" || fail "bar icon uses the red active treatment"
 grep -Fq 'implicitWidth: button.implicitWidth' "$PANEL" || fail "bar widget does not publish its button width"
 grep -Fq 'implicitHeight: button.implicitHeight' "$PANEL" || fail "bar widget does not publish its button height"
 if grep -Eq '#[[:xdigit:]]{3,8}|font\.pixelSize:[[:space:]]*[0-9]|spacing:[[:space:]]*[0-9]|radius:[[:space:]]*[0-9]' "$PANEL"; then

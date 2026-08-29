@@ -551,7 +551,7 @@ Panel {
     text: "M"
     fontSize: Style.font.title
     dimmed: !(root.runtimeRunning || root.runtimeBusy || root.subscriptionBusy || root.bootstrapBusy)
-    active: root.bootstrapBusy || root.subscriptionBusy || root.runtimeBusy || root.runtimeRunning
+    active: false
     tooltipText: root.runtimeBusy ? "Mihomo · Changing runtime"
       : root.runtimeRunning ? ("Mihomo · " + root.activeNodeName + " · " + root.runtimeBindAddress + ":" + root.runtimePort)
       : root.subscriptionBusy ? "Mihomo · Importing subscription"
