@@ -17,6 +17,7 @@ Panel {
   readonly property string subscriptionStatusScript: pluginDir + "/subscription/status.sh"
   readonly property string subscriptionImportScript: pluginDir + "/subscription/import.sh"
   readonly property string subscriptionControlScript: pluginDir + "/subscription/control.py"
+  readonly property string ufwScript: pluginDir + "/subscription/ufw.sh"
 
   property bool statusLoaded: false
   property string statusError: ""
@@ -37,6 +38,15 @@ Panel {
   property string activeNodeName: ""
   property string activeNodeType: ""
   property int runtimePort: 7891
+  property string runtimeBindAddress: "127.0.0.1"
+  property bool settingsLoaded: false
+  property int savedRuntimePort: 7891
+  property bool savedAllowLan: false
+  property int draftRuntimePort: 7891
+  property bool draftAllowLan: false
+  property string settingsError: ""
+  property string settingsMessage: ""
+  property var expandedSubscriptions: ({})
   property string runtimeError: ""
   property string runtimeMessage: ""
   property string subscriptionError: ""
@@ -51,7 +61,11 @@ Panel {
   readonly property bool bootstrapAvailable: statusLoaded && !mihomoInstalled
   readonly property bool bootstrapBusy: bootstrapProc.running
   readonly property bool subscriptionBusy: subscriptionImportProc.running
-  readonly property bool runtimeBusy: nodeStartProc.running || nodeStopProc.running
+  readonly property bool runtimeBusy: nodeStartProc.running || nodeStopProc.running || settingsApplyProc.running
+  readonly property bool settingsValid: draftRuntimePort === Math.floor(draftRuntimePort)
+    && draftRuntimePort >= 1024 && draftRuntimePort <= 65535 && draftRuntimePort !== 7890
+  readonly property bool settingsDirty: draftRuntimePort !== savedRuntimePort
+    || draftAllowLan !== savedAllowLan
   readonly property string subscriptionFailure: subscriptionError !== "" ? subscriptionError : subscriptionStatusError
   readonly property string heroMeta: {
     if (!statusLoaded && statusError === "") return "Checking installation"
@@ -99,7 +113,7 @@ Panel {
     }
   }
 
-  function applyRuntimeStatus(raw) {
+  function applyRuntimeStatus(raw, resetDraft) {
     try {
       var parsed = JSON.parse(String(raw || "{}"))
       runtimeRunning = parsed.running === true
@@ -107,6 +121,18 @@ Panel {
       activeNodeName = String(parsed.nodeName || "")
       activeNodeType = String(parsed.nodeType || "")
       runtimePort = Number(parsed.port || 7891)
+      runtimeBindAddress = String(parsed.bindAddress || "127.0.0.1")
+      if (parsed.settings && Number.isInteger(parsed.settings.port)
+          && typeof parsed.settings.allowLan === "boolean") {
+        var preserveDraft = settingsLoaded && settingsDirty && resetDraft !== true
+        savedRuntimePort = parsed.settings.port
+        savedAllowLan = parsed.settings.allowLan
+        if (!preserveDraft) {
+          draftRuntimePort = savedRuntimePort
+          draftAllowLan = savedAllowLan
+        }
+        settingsLoaded = true
+      }
     } catch (error) {
       if (runtimeError === "") runtimeError = "Could not read Mihomo runtime status"
     }
@@ -132,6 +158,34 @@ Panel {
     runtimeError = ""
     runtimeMessage = "Stopping Mihomo"
     nodeStopProc.running = true
+  }
+
+  function applyRuntimeSettings() {
+    if (runtimeBusy || !settingsValid || !settingsDirty) return
+    settingsError = ""
+    settingsMessage = "Applying runtime settings"
+    settingsApplyProc.pendingRequest = JSON.stringify({
+      port: draftRuntimePort,
+      allowLan: draftAllowLan
+    })
+    settingsApplyProc.running = true
+  }
+
+  function reviewUfw() {
+    if (!savedAllowLan || ufwProc.running) return
+    settingsError = ""
+    ufwProc.running = true
+  }
+
+  function subscriptionExpanded(subscriptionId) {
+    return expandedSubscriptions[subscriptionId] === true
+  }
+
+  function toggleSubscription(subscriptionId) {
+    var next = {}
+    for (var key in expandedSubscriptions) next[key] = expandedSubscriptions[key]
+    next[subscriptionId] = !subscriptionExpanded(subscriptionId)
+    expandedSubscriptions = next
   }
 
   function formatBytes(bytes) {
@@ -313,7 +367,7 @@ Panel {
         try {
           var result = JSON.parse(String(nodeStartStdout.text || "{}"))
           root.applyRuntimeStatus(JSON.stringify(result))
-          root.runtimeMessage = "Running " + result.nodeName + " on 127.0.0.1:" + result.port
+          root.runtimeMessage = "Running " + result.nodeName + " on " + result.bindAddress + ":" + result.port
           root.runtimeError = ""
         } catch (error) {
           root.runtimeError = "Mihomo started but its runtime status could not be read"
@@ -323,6 +377,52 @@ Panel {
         root.runtimeError = String(nodeStartStderr.text || "Could not start the selected node").trim()
       }
       root.refreshRuntime()
+    }
+  }
+
+  Process {
+    id: settingsApplyProc
+    property string pendingRequest: ""
+    command: [root.subscriptionControlScript, "apply"]
+    stdinEnabled: true
+    stdout: StdioCollector {
+      id: settingsApplyStdout
+      waitForEnd: true
+    }
+    stderr: StdioCollector {
+      id: settingsApplyStderr
+      waitForEnd: true
+    }
+    onStarted: {
+      write(pendingRequest + "\n")
+      pendingRequest = ""
+    }
+    onExited: function(exitCode) {
+      if (exitCode === 0) {
+        try {
+          var result = JSON.parse(String(settingsApplyStdout.text || "{}"))
+          root.applyRuntimeStatus(JSON.stringify(result), true)
+          root.settingsMessage = result.restarted === true
+            ? "Settings applied; Mihomo restarted"
+            : "Settings saved for the next start"
+          root.settingsError = ""
+        } catch (error) {
+          root.settingsError = "Settings were applied but their status could not be read"
+        }
+      } else {
+        root.settingsMessage = ""
+        root.settingsError = String(settingsApplyStderr.text || "Could not apply runtime settings").trim()
+      }
+      root.refreshRuntime()
+    }
+  }
+
+  Process {
+    id: ufwProc
+    command: [root.ufwScript, "launch", String(root.savedRuntimePort)]
+    onExited: function(exitCode) {
+      if (exitCode !== 0 && exitCode !== 130)
+        root.settingsError = "UFW review could not be opened"
     }
   }
 
@@ -375,8 +475,8 @@ Panel {
     fontSize: Style.font.title
     dimmed: root.statusLoaded && !root.ready
     active: root.bootstrapBusy || root.subscriptionBusy || root.runtimeBusy || root.runtimeRunning
-    tooltipText: root.runtimeBusy ? "Mihomo · Changing node"
-      : root.runtimeRunning ? ("Mihomo · " + root.activeNodeName + " · 127.0.0.1:" + root.runtimePort)
+    tooltipText: root.runtimeBusy ? "Mihomo · Changing runtime"
+      : root.runtimeRunning ? ("Mihomo · " + root.activeNodeName + " · " + root.runtimeBindAddress + ":" + root.runtimePort)
       : root.subscriptionBusy ? "Mihomo · Importing subscription"
       : !root.statusLoaded ? "Mihomo · Checking"
       : root.ready ? "Mihomo · Ready"
@@ -404,7 +504,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: subscriptionInput.activeFocus
+      blocked: subscriptionInput.activeFocus || runtimePortField.field.activeFocus
       onMoveRequested: function(dx, dy) {
         if (root.bootstrapAvailable) root.cursorActive = true
       }
@@ -529,6 +629,98 @@ Panel {
           spacing: Style.space(10)
 
           PanelSectionHeader {
+            text: "RUNTIME SETTINGS"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+          }
+
+          NumberField {
+            id: runtimePortField
+            width: parent.width
+            label: "Mixed port"
+            from: 1024
+            to: 65535
+            value: root.draftRuntimePort
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onModified: function(value) { root.draftRuntimePort = value }
+          }
+
+          Text {
+            visible: root.draftRuntimePort === 7890
+            width: parent.width
+            text: "Port 7890 is reserved for Clash Verge."
+            color: root.urgent
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+
+          Toggle {
+            width: parent.width
+            label: "Allow LAN"
+            description: "Bind the mixed port to all interfaces instead of localhost."
+            checked: root.draftAllowLan
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onClicked: root.draftAllowLan = !root.draftAllowLan
+          }
+
+          Button {
+            width: parent.width
+            text: settingsApplyProc.running ? "Applying" : "Apply"
+            iconText: settingsApplyProc.running ? "󰦖" : "󰑐"
+            iconSpinning: settingsApplyProc.running
+            bordered: true
+            enabled: !root.runtimeBusy && root.settingsValid && root.settingsDirty
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onClicked: root.applyRuntimeSettings()
+          }
+
+          Button {
+            visible: root.savedAllowLan
+            width: parent.width
+            text: "Review UFW rule for port " + root.savedRuntimePort
+            iconText: "󰒃"
+            bordered: true
+            enabled: !ufwProc.running
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onClicked: root.reviewUfw()
+          }
+
+          Text {
+            visible: root.settingsMessage !== ""
+            width: parent.width
+            text: root.settingsMessage
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+
+          Text {
+            visible: root.settingsError !== ""
+            width: parent.width
+            text: root.settingsError
+            color: root.urgent
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+        }
+
+        PanelSeparator {
+          visible: root.mihomoInstalled
+          foreground: root.foreground
+        }
+
+        Column {
+          visible: root.mihomoInstalled
+          width: parent.width
+          spacing: Style.space(10)
+
+          PanelSectionHeader {
             text: root.subscriptionCount > 0 ? ("SUBSCRIPTIONS · " + root.subscriptionCount) : "SUBSCRIPTIONS"
             foreground: root.foreground
             fontFamily: root.fontFamily
@@ -547,16 +739,16 @@ Panel {
           InfoPair {
             visible: root.runtimeRunning
             label: "Runtime"
-            value: root.activeNodeName + " · 127.0.0.1:" + root.runtimePort
+            value: root.activeNodeName + " · " + root.runtimeBindAddress + ":" + root.runtimePort
             valueColor: root.foreground
           }
 
           Button {
             visible: root.runtimeRunning
             width: parent.width
-            text: root.runtimeBusy ? "Stopping" : "Stop Mihomo"
-            iconText: root.runtimeBusy ? "󰦖" : "󰓛"
-            iconSpinning: root.runtimeBusy
+            text: nodeStopProc.running ? "Stopping" : "Stop Mihomo"
+            iconText: nodeStopProc.running ? "󰦖" : "󰓛"
+            iconSpinning: nodeStopProc.running
             bordered: true
             enabled: !root.runtimeBusy
             foreground: root.foreground
@@ -610,6 +802,7 @@ Panel {
                   required property var modelData
                   required property int index
                   readonly property var subscription: modelData
+                  readonly property bool expanded: root.subscriptionExpanded(subscription.id)
                   width: subscriptionListsColumn.width
                   spacing: Style.space(4)
 
@@ -619,9 +812,13 @@ Panel {
                     foreground: root.foreground
                   }
 
-                  Item {
+                  CursorSurface {
+                    id: subscriptionHeaderSurface
                     width: parent.width
-                    implicitHeight: Math.max(subscriptionHeader.implicitHeight, subscriptionMeta.implicitHeight)
+                    height: Math.max(subscriptionHeader.implicitHeight, subscriptionMeta.implicitHeight)
+                      + Style.spacing.controlGap
+                    foreground: root.foreground
+                    hasCursor: subscriptionHeaderHover.hovered
 
                     PanelSectionHeader {
                       id: subscriptionHeader
@@ -629,24 +826,34 @@ Panel {
                       foreground: root.foreground
                       fontFamily: root.fontFamily
                       anchors.left: parent.left
+                      anchors.leftMargin: Style.space(6)
                       anchors.verticalCenter: parent.verticalCenter
                     }
 
                     Text {
                       id: subscriptionMeta
-                      text: subscriptionList.subscription.parseError ? "PARSE ERROR"
-                        : (subscriptionList.subscription.nodeCount + " NODES")
+                      text: (subscriptionList.expanded ? "▾ " : "▸ ")
+                        + subscriptionList.subscription.nodeCount + " NODES"
+                        + (subscriptionList.subscription.parseError ? " · PARSE ERROR" : "")
                       color: subscriptionList.subscription.parseError ? root.urgent : root.dim
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.caption
                       font.bold: true
                       anchors.right: parent.right
+                      anchors.rightMargin: Style.space(6)
                       anchors.verticalCenter: parent.verticalCenter
+                    }
+
+                    HoverHandler { id: subscriptionHeaderHover }
+                    TapHandler {
+                      onTapped: root.toggleSubscription(subscriptionList.subscription.id)
                     }
                   }
 
                   Text {
-                    visible: subscriptionList.subscription.nodeCount === 0 && !subscriptionList.subscription.parseError
+                    visible: subscriptionList.expanded
+                      && subscriptionList.subscription.nodeCount === 0
+                      && !subscriptionList.subscription.parseError
                     width: parent.width
                     text: subscriptionList.subscription.providerCount > 0
                       ? "No inline nodes; this configuration references proxy providers."
@@ -658,7 +865,7 @@ Panel {
                   }
 
                   Repeater {
-                    model: subscriptionList.subscription.nodes || []
+                    model: subscriptionList.expanded ? (subscriptionList.subscription.nodes || []) : []
 
                     delegate: CursorSurface {
                       id: nodeSurface
@@ -694,7 +901,7 @@ Panel {
                   }
 
                   Text {
-                    visible: subscriptionList.subscription.nodesTruncated > 0
+                    visible: subscriptionList.expanded && subscriptionList.subscription.nodesTruncated > 0
                     width: parent.width
                     text: "+ " + subscriptionList.subscription.nodesTruncated + " more nodes not rendered"
                     color: root.dim

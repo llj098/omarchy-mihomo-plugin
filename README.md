@@ -4,7 +4,7 @@ This is a native Omarchy bar panel backed by a pure Bash bootstrap for installin
 
 The panel deliberately reuses Omarchy's own `Panel`, `BarIconButton`, `KeyboardPanel`, `PanelHero`, `CursorSurface`, `Button`, spacing, font, border, and color tokens. It does not copy or approximate the system theme. When `mihomo` is absent, the panel shows a **Bootstrap** button that opens the reviewed installation flow in Omarchy's floating terminal. An installed system shows the binary, package, and GeoIP state instead.
 
-Proxy controls and service control are intentionally not implemented yet.
+The panel also provides narrowly scoped runtime settings for the plugin-owned Mihomo service; it does not manage desktop proxy settings.
 
 ## Plugin UI
 
@@ -62,13 +62,15 @@ Omarchy recursively watches plugin directories and its validator rejects symlink
 
 The complete URL is saved in `source.url` with mode 0600 but is never returned by the status helper. Importing the exact URL again atomically updates its existing entry. Local files deliberately have no source metadata or deduplication and create a new entry each time. Entries and the data directory use modes 0600 and 0700 respectively.
 
-The subscription status helper uses the system `python-yaml` SafeLoader with bounded alias expansion to parse inline `proxies`. Only each node's `name` and `type` enter status JSON; server addresses, ports, UUIDs, passwords, and other credentials are never returned. Every subscription owns a separate node list inside one height-bounded scrolling region. Up to 500 nodes per subscription are rendered, with the full count and truncation notice retained. `proxy-providers` are counted, but provider nodes cannot be listed until their separate provider files exist locally.
+The subscription status helper uses the system `python-yaml` SafeLoader with bounded alias expansion to parse inline `proxies`. Only each node's `name` and `type` enter status JSON; server addresses, ports, UUIDs, passwords, and other credentials are never returned. Every subscription owns an independently collapsible node list inside one height-bounded scrolling region. Headers default collapsed and show the label, node count, and expand/collapse indicator; expansion state is memory-only. Up to 500 nodes per subscription are rendered when expanded, with the full count and truncation notice retained. `proxy-providers` are counted, but provider nodes cannot be listed until their separate provider files exist locally.
 
 Downloads and local copies are limited to 8 MiB. Every candidate must pass `mihomo -t` in an isolated temporary directory before an atomic commit; a failed import leaves the previous subscription unchanged. The importer accepts complete Mihomo/Clash YAML configurations, not encoded node lists requiring an online converter.
 
 ## Selected-node runtime
 
-Clicking an inline node generates an isolated runtime configuration and starts a transient user service named `fatlj-mihomo.service`. It listens only on `127.0.0.1:7891`, leaving Clash Verge's existing `127.0.0.1:7890` untouched. The panel highlights the active node, shows the runtime endpoint, and provides **Stop Mihomo**.
+Clicking an inline node generates an isolated runtime configuration and starts a transient user service named `fatlj-mihomo.service`. Runtime settings default to mixed port `7891` and localhost-only binding, leaving Clash Verge's existing port `7890` untouched. Port `1024..65535` (except Clash Verge's reserved `7890`) and **Allow LAN** are drafts until **Apply** is clicked. Settings are atomically saved mode 0600 at `~/.local/state/fatlj.mihomo/settings.json`; Apply restarts the same selected node only when this plugin runtime is active, otherwise it affects the next start. The panel highlights the active node, shows the runtime endpoint, and provides **Stop Mihomo**.
+
+When applied **Allow LAN** is enabled, the panel always shows **Review UFW rule**. It opens Omarchy's floating terminal and, after verifying UFW exists, clearly warns that `ufw allow PORT/tcp` permits all UFW-accepted sources. Only explicit Gum confirmation runs `sudo ufw status` and `sudo ufw allow PORT/tcp`; the plugin does not inspect UFW silently, enable/disable it, remove old rules, or support other firewall backends. Password input remains entirely inside sudo's terminal prompt.
 
 The original subscription is never modified. The generated configuration:
 
@@ -76,10 +78,10 @@ The original subscription is never modified. The generated configuration:
 - creates a one-node `__FATLJ_ACTIVE__` select group and forces `MATCH` through it;
 - removes imported HTTP/SOCKS/redir/TProxy/controller/listener/TUN ports and rule providers;
 - removes the DNS listener while retaining internal DNS behavior;
-- forces `allow-lan: false` and `bind-address: 127.0.0.1`;
+- sets `mixed-port`, `allow-lan`, and `bind-address` from the saved runtime settings (`127.0.0.1` when disabled, `0.0.0.0` when enabled);
 - is validated with `mihomo -t` before replacing the active runtime.
 
-Runtime files and the current selection are mode-0600 data under `~/.local/state/fatlj.mihomo`; GeoIP is referenced from the signed system package. The plugin does not change desktop proxy settings, stop Clash Verge, or route applications automatically—clients opt in by using port 7891.
+Runtime files and the current selection are mode-0600 data under `~/.local/state/fatlj.mihomo`; GeoIP is referenced from the signed system package. The plugin does not change desktop proxy settings, stop Clash Verge, or route applications automatically—clients opt in by using the saved mixed port (`7891` by default).
 
 The helpers can also be used directly:
 
@@ -136,10 +138,11 @@ The bootstrap:
 ./tests/test-bootstrap.sh
 ./tests/test-subscription.sh
 python3 ./tests/test-control.py
+./tests/test-ufw.sh
 ./tests/test-ui.sh
 ```
 
-The local tests use localhost fixtures to verify rank-based Bootstrap failover and proxy removal, subscription proxy inheritance, exact-URL deduplication, unrestricted local-file duplication, permissions, validation failure atomicity, credential-safe node parsing, selected-node configuration generation, listener sanitization, traversal rejection, and UI separation. UI tests also cover per-subscription node lists, click-to-start wiring, manifest shape, required Omarchy components, and the absence of hard-coded visual tokens.
+The local tests use localhost fixtures to verify rank-based Bootstrap failover and proxy removal, subscription import safety, runtime settings persistence/config generation/restart behavior, UFW confirmation and command construction with fake commands, and UI wiring. UI tests also cover default-collapsed independent subscription headers, click-to-start wiring, manifest shape, required Omarchy components, and the absence of hard-coded visual tokens.
 
 For a real China-mirror download/signature test without installation:
 

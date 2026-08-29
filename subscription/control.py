@@ -19,6 +19,10 @@ except ImportError:
 
 UNIT = "fatlj-mihomo.service"
 DEFAULT_PORT = 7891
+MIN_PORT = 1024
+MAX_PORT = 65535
+CLASH_VERGE_PORT = 7890
+DEFAULT_SETTINGS = {"port": DEFAULT_PORT, "allowLan": False}
 MAX_CONFIG_BYTES = 8 * 1024 * 1024
 MAX_YAML_ALIASES = 100
 
@@ -49,6 +53,31 @@ def paths():
         data_dir = Path(os.environ.get("MIHOMO_SUBSCRIPTION_DATA", data_dir))
         state_root = Path(os.environ.get("MIHOMO_CONTROL_STATE", state_root))
     return data_dir, state_root
+
+
+def validate_settings(value):
+    if not isinstance(value, dict):
+        raise ControlError("Invalid runtime settings")
+    port = value.get("port")
+    allow_lan = value.get("allowLan")
+    if isinstance(port, bool) or not isinstance(port, int) or not MIN_PORT <= port <= MAX_PORT:
+        raise ControlError(f"Port must be an integer from {MIN_PORT} to {MAX_PORT}")
+    if port == CLASH_VERGE_PORT:
+        raise ControlError(f"Port {CLASH_VERGE_PORT} is reserved for Clash Verge")
+    if not isinstance(allow_lan, bool):
+        raise ControlError("Allow LAN must be true or false")
+    return {"port": port, "allowLan": allow_lan}
+
+
+def load_settings(state_root: Path):
+    settings_file = state_root / "settings.json"
+    if not settings_file.exists():
+        return dict(DEFAULT_SETTINGS)
+    try:
+        value = json.loads(settings_file.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ControlError("Could not read runtime settings") from error
+    return validate_settings(value)
 
 
 def run(command, check=True):
@@ -126,7 +155,7 @@ def load_config(config: Path):
     return document
 
 
-def prepare_runtime_config(document, node_name: str, port: int):
+def prepare_runtime_config(document, node_name: str, port: int, allow_lan: bool = False):
     proxies = document.get("proxies")
     if not isinstance(proxies, list):
         raise ControlError("Subscription has no inline proxy nodes")
@@ -152,8 +181,8 @@ def prepare_runtime_config(document, node_name: str, port: int):
     ):
         runtime.pop(key, None)
     runtime["mixed-port"] = port
-    runtime["allow-lan"] = False
-    runtime["bind-address"] = "127.0.0.1"
+    runtime["allow-lan"] = allow_lan
+    runtime["bind-address"] = "0.0.0.0" if allow_lan else "127.0.0.1"
     runtime["mode"] = "rule"
     runtime["log-level"] = "warning"
 
@@ -194,10 +223,19 @@ def mihomo_binary():
 
 
 def atomic_json(path: Path, payload):
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
-    os.chmod(temporary, 0o600)
-    os.replace(temporary, path)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(payload, stream, ensure_ascii=False, separators=(",", ":"))
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
 
 
 def start_service(binary: Path, runtime_dir: Path):
@@ -238,13 +276,19 @@ def wait_for_start(port: int):
     raise ControlError(f"Mihomo did not start on 127.0.0.1:{port} ({last['ActiveState']}/{last['SubState']})")
 
 
-def start():
+def read_request(error_message: str):
     try:
         request = json.loads(sys.stdin.readline())
     except (json.JSONDecodeError, UnicodeError) as error:
-        raise ControlError("Invalid node selection request") from error
+        raise ControlError(error_message) from error
     if not isinstance(request, dict):
-        raise ControlError("Invalid node selection request")
+        raise ControlError(error_message)
+    return request
+
+
+def start(request=None):
+    if request is None:
+        request = read_request("Invalid node selection request")
     subscription_id = request.get("subscriptionId")
     node_name = request.get("nodeName")
     if not isinstance(subscription_id, str) or not isinstance(node_name, str) or not node_name:
@@ -253,10 +297,10 @@ def start():
     data_dir, state_root = paths()
     config = subscription_config(data_dir, subscription_id)
     document = load_config(config)
-    port = DEFAULT_PORT
-    if os.environ.get("MIHOMO_CONTROL_TESTING") == "1" and os.environ.get("MIHOMO_CONTROL_PORT"):
-        port = int(os.environ["MIHOMO_CONTROL_PORT"])
-    runtime, node_type = prepare_runtime_config(document, node_name, port)
+    settings = load_settings(state_root)
+    port = settings["port"]
+    allow_lan = settings["allowLan"]
+    runtime, node_type = prepare_runtime_config(document, node_name, port, allow_lan)
     binary = mihomo_binary()
 
     state_root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -305,6 +349,8 @@ def start():
         "nodeName": node_name,
         "nodeType": node_type,
         "port": port,
+        "allowLan": allow_lan,
+        "bindAddress": "0.0.0.0" if allow_lan else "127.0.0.1",
         "startedAt": datetime.now(timezone.utc).isoformat(),
     }
     atomic_json(state_root / "selection.json", selection)
@@ -316,17 +362,22 @@ def start():
     }
 
 
-def status():
-    _, state_root = paths()
+def read_selection(state_root: Path):
     selection_file = state_root / "selection.json"
-    selection = {}
     if selection_file.is_file():
         try:
             value = json.loads(selection_file.read_text(encoding="utf-8"))
             if isinstance(value, dict):
-                selection = value
+                return value
         except (OSError, UnicodeError, json.JSONDecodeError):
-            selection = {}
+            pass
+    return {}
+
+
+def status():
+    _, state_root = paths()
+    selection = read_selection(state_root)
+    settings = load_settings(state_root)
     properties = unit_properties()
     running = properties["ActiveState"] == "active" and int(properties.get("MainPID", "0") or 0) > 0
     return {
@@ -337,9 +388,42 @@ def status():
         "subscriptionId": str(selection.get("subscriptionId", "")),
         "nodeName": str(selection.get("nodeName", "")),
         "nodeType": str(selection.get("nodeType", "")),
-        "port": int(selection.get("port", DEFAULT_PORT)),
+        "port": int(selection.get("port", settings["port"])),
+        "allowLan": selection.get("allowLan") is True,
+        "bindAddress": str(selection.get("bindAddress", "127.0.0.1")),
         "startedAt": str(selection.get("startedAt", "")),
+        "settings": settings,
     }
+
+
+def apply_settings():
+    request = validate_settings(read_request("Invalid runtime settings request"))
+    _, state_root = paths()
+    properties = unit_properties()
+    running = properties["ActiveState"] == "active" and int(properties.get("MainPID", "0") or 0) > 0
+    selection = read_selection(state_root) if running else {}
+    if running and (
+        not isinstance(selection.get("subscriptionId"), str)
+        or not isinstance(selection.get("nodeName"), str)
+        or not selection["subscriptionId"]
+        or not selection["nodeName"]
+    ):
+        raise ControlError("Active Mihomo runtime selection is unavailable")
+
+    atomic_json(state_root / "settings.json", request)
+    if running:
+        result = start({
+            "subscriptionId": selection["subscriptionId"],
+            "nodeName": selection["nodeName"],
+        })
+        result["restarted"] = True
+        result["settings"] = request
+        return result
+
+    result = status()
+    result["ok"] = True
+    result["restarted"] = False
+    return result
 
 
 def stop():
@@ -354,16 +438,21 @@ def main():
     try:
         if command == "status":
             result = status()
-        elif command in {"start", "stop"}:
+        elif command in {"start", "stop", "apply"}:
             _, state_root = paths()
             state_root.mkdir(parents=True, exist_ok=True, mode=0o700)
             os.chmod(state_root, 0o700)
             with (state_root / "control.lock").open("a", encoding="utf-8") as lock:
                 os.chmod(lock.name, 0o600)
                 fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-                result = start() if command == "start" else stop()
+                if command == "start":
+                    result = start()
+                elif command == "apply":
+                    result = apply_settings()
+                else:
+                    result = stop()
         else:
-            raise ControlError("Usage: control.py start|status|stop")
+            raise ControlError("Usage: control.py start|status|stop|apply")
     except ControlError as error:
         print(str(error), file=sys.stderr)
         raise SystemExit(1)

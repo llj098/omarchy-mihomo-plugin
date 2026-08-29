@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import copy
 import importlib.util
+import os
+import stat
 import tempfile
 from pathlib import Path
 
@@ -58,6 +60,26 @@ for removed in (
 assert runtime["proxies"] == original["proxies"]
 assert runtime["profile"]["store-selected"] is False
 
+lan_runtime, _ = control.prepare_runtime_config(source, "Node A", 8123, True)
+assert lan_runtime["mixed-port"] == 8123
+assert lan_runtime["allow-lan"] is True
+assert lan_runtime["bind-address"] == "0.0.0.0"
+
+for invalid_settings in (
+    {"port": 1023, "allowLan": False},
+    {"port": 65536, "allowLan": False},
+    {"port": 7890, "allowLan": False},
+    {"port": "7891", "allowLan": False},
+    {"port": True, "allowLan": False},
+    {"port": 7891, "allowLan": 1},
+):
+    try:
+        control.validate_settings(invalid_settings)
+    except control.ControlError:
+        pass
+    else:
+        raise AssertionError(f"invalid settings were accepted: {invalid_settings!r}")
+
 try:
     control.prepare_runtime_config(source, "Missing", 7891)
 except control.ControlError:
@@ -88,4 +110,61 @@ with tempfile.TemporaryDirectory() as temporary:
         else:
             raise AssertionError(f"unsafe subscription id was accepted: {unsafe!r}")
 
-print("control_tests=ok force_selected_node=1 listener_sanitization=1 traversal_rejected=1")
+with tempfile.TemporaryDirectory() as temporary:
+    state_root = Path(temporary) / "state"
+    state_root.mkdir(mode=0o700)
+    assert control.load_settings(state_root) == {"port": 7891, "allowLan": False}
+    control.atomic_json(state_root / "settings.json", {"port": 8123, "allowLan": True})
+    assert control.load_settings(state_root) == {"port": 8123, "allowLan": True}
+    assert stat.S_IMODE((state_root / "settings.json").stat().st_mode) == 0o600
+    assert not list(state_root.glob("settings.json.*"))
+
+with tempfile.TemporaryDirectory() as temporary:
+    state_root = Path(temporary) / "state"
+    state_root.mkdir(mode=0o700)
+    previous = {
+        "MIHOMO_CONTROL_TESTING": os.environ.get("MIHOMO_CONTROL_TESTING"),
+        "MIHOMO_CONTROL_STATE": os.environ.get("MIHOMO_CONTROL_STATE"),
+    }
+    original_unit_properties = control.unit_properties
+    original_read_request = control.read_request
+    original_start = control.start
+    try:
+        os.environ["MIHOMO_CONTROL_TESTING"] = "1"
+        os.environ["MIHOMO_CONTROL_STATE"] = str(state_root)
+        control.read_request = lambda _message: {"port": 9001, "allowLan": True}
+        control.unit_properties = lambda: {
+            "LoadState": "not-found", "ActiveState": "inactive", "SubState": "dead", "MainPID": "0"
+        }
+        stopped_result = control.apply_settings()
+        assert stopped_result["restarted"] is False
+        assert control.load_settings(state_root) == {"port": 9001, "allowLan": True}
+
+        control.atomic_json(state_root / "selection.json", {
+            "subscriptionId": "safe-id", "nodeName": "Node A"
+        })
+        restart_requests = []
+        control.read_request = lambda _message: {"port": 9002, "allowLan": False}
+        control.unit_properties = lambda: {
+            "LoadState": "loaded", "ActiveState": "active", "SubState": "running", "MainPID": "42"
+        }
+        control.start = lambda request: restart_requests.append(request) or {
+            "ok": True, "running": True, "subscriptionId": request["subscriptionId"],
+            "nodeName": request["nodeName"]
+        }
+        running_result = control.apply_settings()
+        assert restart_requests == [{"subscriptionId": "safe-id", "nodeName": "Node A"}]
+        assert running_result["restarted"] is True
+        assert running_result["settings"] == {"port": 9002, "allowLan": False}
+        assert control.load_settings(state_root) == {"port": 9002, "allowLan": False}
+    finally:
+        control.unit_properties = original_unit_properties
+        control.read_request = original_read_request
+        control.start = original_start
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+print("control_tests=ok settings_persistence=1 lan_config=1 apply_restart=1 traversal_rejected=1")
