@@ -47,6 +47,7 @@ Panel {
   property string settingsError: ""
   property string settingsMessage: ""
   property var expandedSubscriptions: ({})
+  property var expandedGroups: ({})
   property string runtimeError: ""
   property string runtimeMessage: ""
   property string subscriptionError: ""
@@ -179,6 +180,22 @@ Panel {
     for (var key in expandedSubscriptions) next[key] = expandedSubscriptions[key]
     next[subscriptionId] = !subscriptionExpanded(subscriptionId)
     expandedSubscriptions = next
+  }
+
+  function groupExpansionKey(subscriptionId, groupName) {
+    return subscriptionId + "\u001f" + groupName
+  }
+
+  function groupExpanded(subscriptionId, groupName) {
+    return expandedGroups[groupExpansionKey(subscriptionId, groupName)] === true
+  }
+
+  function toggleGroup(subscriptionId, groupName) {
+    var key = groupExpansionKey(subscriptionId, groupName)
+    var next = {}
+    for (var current in expandedGroups) next[current] = expandedGroups[current]
+    next[key] = !groupExpanded(subscriptionId, groupName)
+    expandedGroups = next
   }
 
   function formatBytes(bytes) {
@@ -672,6 +689,8 @@ Panel {
                     Text {
                       id: subscriptionMeta
                       text: (subscriptionList.expanded ? "▾ " : "▸ ")
+                        + subscriptionList.subscription.groupCount
+                        + (subscriptionList.subscription.groupCount === 1 ? " GROUP · " : " GROUPS · ")
                         + subscriptionList.subscription.nodeCount + " NODES"
                         + (subscriptionList.subscription.parseError ? " · PARSE ERROR" : "")
                       color: subscriptionList.subscription.parseError ? root.urgent : root.dim
@@ -691,12 +710,10 @@ Panel {
 
                   Text {
                     visible: subscriptionList.expanded
-                      && subscriptionList.subscription.nodeCount === 0
+                      && subscriptionList.subscription.groupCount === 0
                       && !subscriptionList.subscription.parseError
                     width: parent.width
-                    text: subscriptionList.subscription.providerCount > 0
-                      ? "No inline nodes; this configuration references proxy providers."
-                      : "No inline nodes found"
+                    text: "No proxy groups found"
                     color: root.dim
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.bodySmall
@@ -704,48 +721,105 @@ Panel {
                   }
 
                   Repeater {
-                    model: subscriptionList.expanded ? (subscriptionList.subscription.nodes || []) : []
+                    model: subscriptionList.expanded ? (subscriptionList.subscription.groups || []) : []
 
-                    delegate: CursorSurface {
-                      id: nodeSurface
+                    delegate: Column {
+                      id: groupList
                       required property var modelData
-                      readonly property var node: modelData
+                      readonly property var group: modelData
+                      readonly property bool expanded: root.groupExpanded(
+                        subscriptionList.subscription.id, group.name)
                       width: subscriptionList.width
-                      height: nodePair.implicitHeight + Style.spacing.controlGap
-                      foreground: root.foreground
-                      hasCursor: nodeHover.hovered
-                      current: root.runtimeRunning
-                        && root.activeSubscriptionId === subscriptionList.subscription.id
-                        && root.activeNodeName === nodeSurface.node.name
-                      opacity: root.runtimeBusy ? 0.6 : 1.0
+                      spacing: Style.space(4)
 
-                      NodePair {
-                        id: nodePair
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.leftMargin: Style.space(6)
-                        anchors.rightMargin: Style.space(6)
-                        label: nodeSurface.node.name
-                        value: nodeSurface.current ? (nodeSurface.node.type.toUpperCase() + " · ACTIVE")
-                          : nodeSurface.node.type.toUpperCase()
+                      CursorSurface {
+                        id: groupHeaderSurface
+                        width: parent.width
+                        height: Math.max(groupHeader.implicitHeight, groupMeta.implicitHeight)
+                          + Style.spacing.controlGap
+                        foreground: root.foreground
+                        hasCursor: groupHeaderHover.hovered
+
+                        PanelSectionHeader {
+                          id: groupHeader
+                          text: groupList.group.name
+                          foreground: root.foreground
+                          fontFamily: root.fontFamily
+                          anchors.left: parent.left
+                          anchors.leftMargin: Style.space(14)
+                          anchors.verticalCenter: parent.verticalCenter
+                        }
+
+                        Text {
+                          id: groupMeta
+                          text: (groupList.expanded ? "▾ " : "▸ ")
+                            + groupList.group.type.toUpperCase() + " · "
+                            + groupList.group.memberCount
+                          color: root.dim
+                          font.family: root.fontFamily
+                          font.pixelSize: Style.font.caption
+                          font.bold: true
+                          anchors.right: parent.right
+                          anchors.rightMargin: Style.space(6)
+                          anchors.verticalCenter: parent.verticalCenter
+                        }
+
+                        HoverHandler { id: groupHeaderHover }
+                        TapHandler {
+                          onTapped: root.toggleGroup(
+                            subscriptionList.subscription.id, groupList.group.name)
+                        }
                       }
 
-                      HoverHandler { id: nodeHover }
-                      TapHandler {
-                        enabled: !root.runtimeBusy
-                        onTapped: root.startNode(subscriptionList.subscription.id, nodeSurface.node.name)
+                      Repeater {
+                        model: groupList.expanded ? (groupList.group.members || []) : []
+
+                        delegate: CursorSurface {
+                          id: memberSurface
+                          required property var modelData
+                          readonly property var member: modelData
+                          readonly property bool isProxy: member.kind === "proxy"
+                          width: groupList.width
+                          height: memberPair.implicitHeight + Style.spacing.controlGap
+                          foreground: root.foreground
+                          hasCursor: memberSurface.isProxy && memberHover.hovered
+                          current: memberSurface.isProxy
+                            && root.runtimeRunning
+                            && root.activeSubscriptionId === subscriptionList.subscription.id
+                            && root.activeNodeName === memberSurface.member.name
+                          opacity: memberSurface.isProxy ? (root.runtimeBusy ? 0.6 : 1.0) : 0.65
+
+                          NodePair {
+                            id: memberPair
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.leftMargin: Style.space(22)
+                            anchors.rightMargin: Style.space(6)
+                            label: memberSurface.member.name
+                            value: memberSurface.current
+                              ? (memberSurface.member.type.toUpperCase() + " · ACTIVE")
+                              : memberSurface.member.type.toUpperCase()
+                          }
+
+                          HoverHandler { id: memberHover }
+                          TapHandler {
+                            enabled: memberSurface.isProxy && !root.runtimeBusy
+                            onTapped: root.startNode(
+                              subscriptionList.subscription.id, memberSurface.member.name)
+                          }
+                        }
+                      }
+
+                      Text {
+                        visible: groupList.expanded && groupList.group.membersTruncated > 0
+                        width: parent.width
+                        text: "+ " + groupList.group.membersTruncated + " more nodes not rendered"
+                        color: root.dim
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.bodySmall
                       }
                     }
-                  }
-
-                  Text {
-                    visible: subscriptionList.expanded && subscriptionList.subscription.nodesTruncated > 0
-                    width: parent.width
-                    text: "+ " + subscriptionList.subscription.nodesTruncated + " more nodes not rendered"
-                    color: root.dim
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.bodySmall
                   }
                 }
               }

@@ -53,6 +53,13 @@ proxies:
     type: ss
     server: local-node-secret.invalid
     password: local-password-secret
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies: [Local Node, DIRECT]
+  - name: FINAL
+    type: select
+    proxies: [PROXY, DIRECT]
 EOF
 first="$(run_import "$local_file")"
 jq -e '.ok and .action == "added" and .kind == "local"' <<<"$first" >/dev/null
@@ -181,6 +188,10 @@ jq -e '
   and ([.subscriptions[].nodes[].name] | index("Local Node") != null)
   and ([.subscriptions[].nodes[].name] | index("Remote Node Two") != null)
   and ([.subscriptions[].nodes[].type] | index("trojan") != null)
+  and ([.subscriptions[].groups[].name] | index("PROXY") != null)
+  and ([.subscriptions[].groups[].members[] | select(.kind == "builtin") | .name] | index("DIRECT") != null)
+  and ([.subscriptions[].groups[].members[] | select(.kind == "group") | .name] | index("PROXY") != null)
+  and ([.subscriptions[].groups[] | select(.synthetic) | .name] | index("ALL NODES") != null)
 ' <<<"$status_json" >/dev/null
 if grep -Eq 'top-secret|node-secret|password-secret|uuid-secret' <<<"$status_json"; then
   fail "status output leaked subscription credentials"

@@ -27,7 +27,7 @@ fi
 jq -e '
   .schemaVersion == 1
   and .id == "fatlj.mihomo"
-  and .version == "0.5.0"
+  and .version == "0.6.0"
   and (.kinds | index("bar-widget") != null)
   and .entryPoints.barWidget == "Panel.qml"
   and .barWidget.defaultSection == "right"
@@ -95,12 +95,16 @@ grep -Fq 'command: [root.ufwScript, "launch", String(root.savedRuntimePort)]' "$
 grep -Fq 'text: root.subscriptionCount > 0 ? ("SUBSCRIPTIONS · " + root.subscriptionCount) : "SUBSCRIPTIONS"' "$PANEL" || fail "subscription section is missing"
 grep -Fq 'model: root.subscriptions' "$PANEL" || fail "subscriptions do not own separate node lists"
 grep -Fq 'property var expandedSubscriptions: ({})' "$PANEL" || fail "subscription expansion memory does not default empty"
+grep -Fq 'property var expandedGroups: ({})' "$PANEL" || fail "group expansion memory does not default empty"
 grep -Fq 'readonly property bool expanded: root.subscriptionExpanded(subscription.id)' "$PANEL" || fail "subscription default-collapsed state is missing"
 grep -Fq 'onTapped: root.toggleSubscription(subscriptionList.subscription.id)' "$PANEL" || fail "subscription header toggle is not wired"
-grep -Fq 'model: subscriptionList.expanded ? (subscriptionList.subscription.nodes || []) : []' "$PANEL" || fail "collapsed subscriptions still instantiate node rows"
+grep -Fq 'model: subscriptionList.expanded ? (subscriptionList.subscription.groups || []) : []' "$PANEL" || fail "collapsed subscriptions still instantiate groups"
+grep -Fq 'readonly property bool expanded: root.groupExpanded(' "$PANEL" || fail "group default-collapsed state is missing"
+grep -Fq 'onTapped: root.toggleGroup(' "$PANEL" || fail "group header toggle is not wired"
+grep -Fq 'model: groupList.expanded ? (groupList.group.members || []) : []' "$PANEL" || fail "collapsed groups still instantiate members"
 grep -Fq 'height: Math.min(contentHeight, Style.space(320))' "$PANEL" || fail "subscription node lists are not height-bounded"
 grep -Fq 'command: [root.subscriptionControlScript, "start"]' "$PANEL" || fail "node click is not connected to runtime control"
-grep -Fq 'onTapped: root.startNode(subscriptionList.subscription.id, nodeSurface.node.name)' "$PANEL" || fail "node rows are not clickable"
+grep -Fq 'subscriptionList.subscription.id, memberSurface.member.name)' "$PANEL" || fail "proxy member rows are not clickable"
 grep -Fq 'text: nodeStopProc.running ? "Stopping" : "Stop Mihomo"' "$PANEL" || fail "runtime cannot be stopped from the panel"
 grep -Fq 'implicitWidth: button.implicitWidth' "$PANEL" || fail "bar widget does not publish its button width"
 grep -Fq 'implicitHeight: button.implicitHeight' "$PANEL" || fail "bar widget does not publish its button height"
@@ -108,4 +112,4 @@ if grep -Eq '#[[:xdigit:]]{3,8}|font\.pixelSize:[[:space:]]*[0-9]|spacing:[[:spa
   fail "panel contains hard-coded visual tokens"
 fi
 
-echo "ui_tests=ok missing_state=1 ready_state=1 runtime_settings=1 ufw_wiring=1 default_collapsed=1 independent_toggle=1 clickable_nodes=1 style_tokens=shared"
+echo "ui_tests=ok missing_state=1 ready_state=1 runtime_settings=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"
