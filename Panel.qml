@@ -16,6 +16,7 @@ Panel {
   readonly property string bootstrapScript: pluginDir + "/bootstrap/bootstrap.sh"
   readonly property string subscriptionStatusScript: pluginDir + "/subscription/status.sh"
   readonly property string subscriptionImportScript: pluginDir + "/subscription/import.sh"
+  readonly property string subscriptionControlScript: pluginDir + "/subscription/control.py"
 
   property bool statusLoaded: false
   property string statusError: ""
@@ -30,11 +31,14 @@ Panel {
   property real geoipSize: 0
   property bool cursorActive: false
   property var subscriptions: []
-  property var nodeRows: []
   property int subscriptionCount: 0
-  property int nodeCount: 0
-  property int providerCount: 0
-  property int nodeParseErrorCount: 0
+  property bool runtimeRunning: false
+  property string activeSubscriptionId: ""
+  property string activeNodeName: ""
+  property string activeNodeType: ""
+  property int runtimePort: 7891
+  property string runtimeError: ""
+  property string runtimeMessage: ""
   property string subscriptionError: ""
   property string subscriptionStatusError: ""
   property string subscriptionMessage: ""
@@ -47,6 +51,7 @@ Panel {
   readonly property bool bootstrapAvailable: statusLoaded && !mihomoInstalled
   readonly property bool bootstrapBusy: bootstrapProc.running
   readonly property bool subscriptionBusy: subscriptionImportProc.running
+  readonly property bool runtimeBusy: nodeStartProc.running || nodeStopProc.running
   readonly property string subscriptionFailure: subscriptionError !== "" ? subscriptionError : subscriptionStatusError
   readonly property string heroMeta: {
     if (!statusLoaded && statusError === "") return "Checking installation"
@@ -88,28 +93,45 @@ Panel {
       var parsed = JSON.parse(String(raw || "{}"))
       subscriptions = Array.isArray(parsed.subscriptions) ? parsed.subscriptions : []
       subscriptionCount = Number(parsed.count || 0)
-      nodeCount = Number(parsed.nodeCount || 0)
-      providerCount = Number(parsed.providerCount || 0)
-      var rows = []
-      var parseErrors = 0
-      for (var i = 0; i < subscriptions.length; i++) {
-        var subscription = subscriptions[i]
-        if (subscription.parseError === true) parseErrors++
-        var nodes = Array.isArray(subscription.nodes) ? subscription.nodes : []
-        for (var j = 0; j < nodes.length; j++) {
-          rows.push({
-            sectionTitle: j === 0 ? String(subscription.label || "Subscription") : "",
-            name: String(nodes[j].name || "Unnamed node"),
-            type: String(nodes[j].type || "unknown")
-          })
-        }
-      }
-      nodeRows = rows
-      nodeParseErrorCount = parseErrors
       subscriptionStatusError = ""
     } catch (error) {
       subscriptionStatusError = "Could not read subscription status"
     }
+  }
+
+  function applyRuntimeStatus(raw) {
+    try {
+      var parsed = JSON.parse(String(raw || "{}"))
+      runtimeRunning = parsed.running === true
+      activeSubscriptionId = String(parsed.subscriptionId || "")
+      activeNodeName = String(parsed.nodeName || "")
+      activeNodeType = String(parsed.nodeType || "")
+      runtimePort = Number(parsed.port || 7891)
+    } catch (error) {
+      if (runtimeError === "") runtimeError = "Could not read Mihomo runtime status"
+    }
+  }
+
+  function refreshRuntime() {
+    if (!runtimeStatusProc.running) runtimeStatusProc.running = true
+  }
+
+  function startNode(subscriptionId, nodeName) {
+    if (runtimeBusy || !subscriptionId || !nodeName) return
+    runtimeError = ""
+    runtimeMessage = "Starting " + nodeName
+    nodeStartProc.pendingRequest = JSON.stringify({
+      subscriptionId: subscriptionId,
+      nodeName: nodeName
+    })
+    nodeStartProc.running = true
+  }
+
+  function stopRuntime() {
+    if (runtimeBusy || !runtimeRunning) return
+    runtimeError = ""
+    runtimeMessage = "Stopping Mihomo"
+    nodeStopProc.running = true
   }
 
   function formatBytes(bytes) {
@@ -159,6 +181,7 @@ Panel {
       cursorActive = bootstrapAvailable
       refreshStatus()
       refreshSubscriptions()
+      refreshRuntime()
     }
   }
 
@@ -167,6 +190,7 @@ Panel {
   Component.onCompleted: {
     refreshStatus()
     refreshSubscriptions()
+    refreshRuntime()
   }
 
   Process {
@@ -250,13 +274,90 @@ Panel {
     }
   }
 
+  Process {
+    id: runtimeStatusProc
+    command: [root.subscriptionControlScript, "status"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.applyRuntimeStatus(text)
+    }
+    stderr: StdioCollector {
+      id: runtimeStatusStderr
+      waitForEnd: true
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0 && root.runtimeError === "")
+        root.runtimeError = String(runtimeStatusStderr.text || "Mihomo runtime status failed").trim()
+    }
+  }
+
+  Process {
+    id: nodeStartProc
+    property string pendingRequest: ""
+    command: [root.subscriptionControlScript, "start"]
+    stdinEnabled: true
+    stdout: StdioCollector {
+      id: nodeStartStdout
+      waitForEnd: true
+    }
+    stderr: StdioCollector {
+      id: nodeStartStderr
+      waitForEnd: true
+    }
+    onStarted: {
+      write(pendingRequest + "\n")
+      pendingRequest = ""
+    }
+    onExited: function(exitCode) {
+      if (exitCode === 0) {
+        try {
+          var result = JSON.parse(String(nodeStartStdout.text || "{}"))
+          root.applyRuntimeStatus(JSON.stringify(result))
+          root.runtimeMessage = "Running " + result.nodeName + " on 127.0.0.1:" + result.port
+          root.runtimeError = ""
+        } catch (error) {
+          root.runtimeError = "Mihomo started but its runtime status could not be read"
+        }
+      } else {
+        root.runtimeMessage = ""
+        root.runtimeError = String(nodeStartStderr.text || "Could not start the selected node").trim()
+      }
+      root.refreshRuntime()
+    }
+  }
+
+  Process {
+    id: nodeStopProc
+    command: [root.subscriptionControlScript, "stop"]
+    stdout: StdioCollector {
+      id: nodeStopStdout
+      waitForEnd: true
+    }
+    stderr: StdioCollector {
+      id: nodeStopStderr
+      waitForEnd: true
+    }
+    onExited: function(exitCode) {
+      if (exitCode === 0) {
+        root.applyRuntimeStatus(String(nodeStopStdout.text || "{}"))
+        root.runtimeMessage = "Mihomo stopped"
+        root.runtimeError = ""
+      } else {
+        root.runtimeMessage = ""
+        root.runtimeError = String(nodeStopStderr.text || "Could not stop Mihomo").trim()
+      }
+      root.refreshRuntime()
+    }
+  }
+
   Timer {
-    interval: bootstrapProc.running ? 2000 : 30000
-    running: root.opened || bootstrapProc.running
+    interval: (bootstrapProc.running || root.runtimeBusy || root.runtimeRunning) ? 2000 : 30000
+    running: root.opened || bootstrapProc.running || root.runtimeRunning
     repeat: true
     onTriggered: {
       root.refreshStatus()
       root.refreshSubscriptions()
+      root.refreshRuntime()
     }
   }
 
@@ -273,15 +374,19 @@ Panel {
     text: "M"
     fontSize: Style.font.title
     dimmed: root.statusLoaded && !root.ready
-    active: root.bootstrapBusy || root.subscriptionBusy
-    tooltipText: root.subscriptionBusy ? "Mihomo · Importing subscription"
+    active: root.bootstrapBusy || root.subscriptionBusy || root.runtimeBusy || root.runtimeRunning
+    tooltipText: root.runtimeBusy ? "Mihomo · Changing node"
+      : root.runtimeRunning ? ("Mihomo · " + root.activeNodeName + " · 127.0.0.1:" + root.runtimePort)
+      : root.subscriptionBusy ? "Mihomo · Importing subscription"
       : !root.statusLoaded ? "Mihomo · Checking"
       : root.ready ? "Mihomo · Ready"
       : "Mihomo · Bootstrap required"
     onPressed: function(buttonCode) {
-      if (buttonCode === Qt.RightButton || buttonCode === Qt.MiddleButton)
+      if (buttonCode === Qt.RightButton || buttonCode === Qt.MiddleButton) {
         root.refreshStatus()
-      else
+        root.refreshSubscriptions()
+        root.refreshRuntime()
+      } else
         root.toggle()
     }
   }
@@ -439,38 +544,30 @@ Panel {
             wrapMode: Text.WordWrap
           }
 
-          Repeater {
-            model: root.subscriptions.slice(0, 5)
-
-            delegate: InfoPair {
-              required property var modelData
-              label: modelData.label
-              value: modelData.parseError ? "Node parse error"
-                : (modelData.nodeCount + " nodes · " + root.formatBytes(modelData.bytes))
-              valueColor: modelData.parseError ? root.urgent : root.dim
-            }
+          InfoPair {
+            visible: root.runtimeRunning
+            label: "Runtime"
+            value: root.activeNodeName + " · 127.0.0.1:" + root.runtimePort
+            valueColor: root.foreground
           }
 
-          Text {
-            visible: root.subscriptionCount > 5
+          Button {
+            visible: root.runtimeRunning
             width: parent.width
-            text: "+ " + (root.subscriptionCount - 5) + " more"
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-          }
-
-          PanelSectionHeader {
-            visible: root.subscriptionCount > 0
-            text: "NODES · " + root.nodeCount
+            text: root.runtimeBusy ? "Stopping" : "Stop Mihomo"
+            iconText: root.runtimeBusy ? "󰦖" : "󰓛"
+            iconSpinning: root.runtimeBusy
+            bordered: true
+            enabled: !root.runtimeBusy
             foreground: root.foreground
             fontFamily: root.fontFamily
+            onClicked: root.stopRuntime()
           }
 
           Text {
-            visible: root.subscriptionCount > 0 && root.nodeCount === 0 && root.nodeParseErrorCount === 0
+            visible: root.runtimeMessage !== ""
             width: parent.width
-            text: root.providerCount > 0 ? "No inline nodes; this configuration references proxy providers." : "No inline nodes found"
+            text: root.runtimeMessage
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
@@ -478,62 +575,135 @@ Panel {
           }
 
           Text {
-            visible: root.nodeParseErrorCount > 0
+            visible: root.runtimeError !== ""
             width: parent.width
-            text: root.nodeParseErrorCount + " subscription configuration could not be parsed"
+            text: root.runtimeError
             color: root.urgent
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
             wrapMode: Text.WordWrap
           }
 
-          ListView {
-            id: nodeList
-            visible: root.nodeRows.length > 0
+          Flickable {
+            id: subscriptionLists
+            visible: root.subscriptionCount > 0
             width: parent.width
-            height: Math.min(contentHeight, Style.space(240))
-            spacing: Style.space(4)
+            height: Math.min(contentHeight, Style.space(320))
+            contentWidth: width
+            contentHeight: subscriptionListsColumn.implicitHeight
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             interactive: contentHeight > height
 
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-            model: root.nodeRows
+            Column {
+              id: subscriptionListsColumn
+              width: subscriptionLists.width
+              spacing: Style.space(10)
 
-            delegate: Item {
-              required property var modelData
-              width: ListView.view.width
-              height: nodeDelegateColumn.implicitHeight
+              Repeater {
+                model: root.subscriptions
 
-              Column {
-                id: nodeDelegateColumn
-                width: parent.width
-                spacing: Style.space(4)
+                delegate: Column {
+                  id: subscriptionList
+                  required property var modelData
+                  required property int index
+                  readonly property var subscription: modelData
+                  width: subscriptionListsColumn.width
+                  spacing: Style.space(4)
 
-                PanelSectionHeader {
-                  visible: modelData.sectionTitle !== ""
-                  height: visible ? implicitHeight : 0
-                  text: modelData.sectionTitle
-                  foreground: root.foreground
-                  fontFamily: root.fontFamily
-                }
+                  PanelSeparator {
+                    visible: subscriptionList.index > 0
+                    height: visible ? implicitHeight : 0
+                    foreground: root.foreground
+                  }
 
-                NodePair {
-                  label: modelData.name
-                  value: modelData.type.toUpperCase()
+                  Item {
+                    width: parent.width
+                    implicitHeight: Math.max(subscriptionHeader.implicitHeight, subscriptionMeta.implicitHeight)
+
+                    PanelSectionHeader {
+                      id: subscriptionHeader
+                      text: subscriptionList.subscription.label
+                      foreground: root.foreground
+                      fontFamily: root.fontFamily
+                      anchors.left: parent.left
+                      anchors.verticalCenter: parent.verticalCenter
+                    }
+
+                    Text {
+                      id: subscriptionMeta
+                      text: subscriptionList.subscription.parseError ? "PARSE ERROR"
+                        : (subscriptionList.subscription.nodeCount + " NODES")
+                      color: subscriptionList.subscription.parseError ? root.urgent : root.dim
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.caption
+                      font.bold: true
+                      anchors.right: parent.right
+                      anchors.verticalCenter: parent.verticalCenter
+                    }
+                  }
+
+                  Text {
+                    visible: subscriptionList.subscription.nodeCount === 0 && !subscriptionList.subscription.parseError
+                    width: parent.width
+                    text: subscriptionList.subscription.providerCount > 0
+                      ? "No inline nodes; this configuration references proxy providers."
+                      : "No inline nodes found"
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    wrapMode: Text.WordWrap
+                  }
+
+                  Repeater {
+                    model: subscriptionList.subscription.nodes || []
+
+                    delegate: CursorSurface {
+                      id: nodeSurface
+                      required property var modelData
+                      readonly property var node: modelData
+                      width: subscriptionList.width
+                      height: nodePair.implicitHeight + Style.spacing.controlGap
+                      foreground: root.foreground
+                      hasCursor: nodeHover.hovered
+                      current: root.runtimeRunning
+                        && root.activeSubscriptionId === subscriptionList.subscription.id
+                        && root.activeNodeName === nodeSurface.node.name
+                      opacity: root.runtimeBusy ? 0.6 : 1.0
+
+                      NodePair {
+                        id: nodePair
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.leftMargin: Style.space(6)
+                        anchors.rightMargin: Style.space(6)
+                        label: nodeSurface.node.name
+                        value: nodeSurface.current ? (nodeSurface.node.type.toUpperCase() + " · ACTIVE")
+                          : nodeSurface.node.type.toUpperCase()
+                      }
+
+                      HoverHandler { id: nodeHover }
+                      TapHandler {
+                        enabled: !root.runtimeBusy
+                        onTapped: root.startNode(subscriptionList.subscription.id, nodeSurface.node.name)
+                      }
+                    }
+                  }
+
+                  Text {
+                    visible: subscriptionList.subscription.nodesTruncated > 0
+                    width: parent.width
+                    text: "+ " + subscriptionList.subscription.nodesTruncated + " more nodes not rendered"
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                  }
                 }
               }
             }
-          }
-
-          Text {
-            visible: root.nodeRows.length < root.nodeCount
-            width: parent.width
-            text: "+ " + (root.nodeCount - root.nodeRows.length) + " more nodes not rendered"
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
           }
 
           Text {
