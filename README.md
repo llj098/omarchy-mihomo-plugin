@@ -48,7 +48,7 @@ The installation and subscription sections are separated with Omarchy's native `
 
 The importer does not add, remove, or bypass proxy settings. Curl honors the user's existing environment and curl configuration; without a configured proxy it connects directly. Sources are passed from QML over stdin rather than argv.
 
-Subscriptions are stored under the plugin directory:
+Subscriptions are stored physically under the plugin directory as requested:
 
 ```text
 data/subscriptions/url-<sha256-of-exact-url>/
@@ -57,6 +57,8 @@ data/subscriptions/url-<sha256-of-exact-url>/
 data/subscriptions/local-<timestamp>-<random>/
   config.yaml
 ```
+
+Omarchy recursively watches plugin directories and its validator rejects symlinks, so downloads, local copies, logs, locking, and Mihomo validation are staged under `~/.cache/fatlj-mihomo-subscription`. Only one final atomic rename enters the watched `data/` tree. This reduces an import from dozens of reload-triggering events to one unavoidable commit event while keeping the actual subscription in the plugin directory.
 
 The complete URL is saved in `source.url` with mode 0600 but is never returned by the status helper. Importing the exact URL again atomically updates its existing entry. Local files deliberately have no source metadata or deduplication and create a new entry each time. Entries and the data directory use modes 0600 and 0700 respectively.
 

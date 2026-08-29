@@ -34,6 +34,7 @@ data="$TMP/data/subscriptions"
 common_env=(
   MIHOMO_SUBSCRIPTION_TESTING=1
   MIHOMO_SUBSCRIPTION_DATA="$data"
+  MIHOMO_SUBSCRIPTION_CACHE="$TMP/cache"
   MIHOMO_SUBSCRIPTION_MIHOMO="$fakebin/mihomo"
 )
 
@@ -112,6 +113,7 @@ printf '%s\n' "http://127.0.0.1:$port/direct" | env \
   -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u all_proxy -u ALL_PROXY \
   MIHOMO_SUBSCRIPTION_TESTING=1 \
   MIHOMO_SUBSCRIPTION_DATA="$direct_data" \
+  MIHOMO_SUBSCRIPTION_CACHE="$TMP/direct-cache" \
   MIHOMO_SUBSCRIPTION_MIHOMO="$fakebin/mihomo" \
   "$IMPORT" >/dev/null
 grep -Rq 'direct-without-proxy' "$direct_data" || fail "direct URL import failed without a proxy"
@@ -142,6 +144,27 @@ status_json="$(env MIHOMO_SUBSCRIPTION_TESTING=1 MIHOMO_SUBSCRIPTION_DATA="$data
 jq -e '.count == 4 and .hasSubscriptions and ([.subscriptions[].kind] | map(select(. == "url")) | length) == 2' <<<"$status_json" >/dev/null
 if grep -Fq 'top-secret' <<<"$status_json"; then fail "status output leaked a subscription token"; fi
 
+if command -v inotifywait >/dev/null 2>&1; then
+  watched_data="$TMP/watched-plugin/data/subscriptions"
+  watched_cache="$TMP/watched-cache"
+  watched_events="$TMP/watched-events"
+  mkdir -p "$watched_data" "$watched_cache"
+  inotifywait -m -r -q -e close_write,create,delete,move --format '%w%f' \
+    "$TMP/watched-plugin" >"$watched_events" &
+  watcher_pid=$!
+  printf '%s\n' "$local_file" | env \
+    MIHOMO_SUBSCRIPTION_TESTING=1 \
+    MIHOMO_SUBSCRIPTION_DATA="$watched_data" \
+    MIHOMO_SUBSCRIPTION_CACHE="$watched_cache" \
+    MIHOMO_SUBSCRIPTION_MIHOMO="$fakebin/mihomo" \
+    "$IMPORT" >/dev/null
+  for _ in {1..50}; do [[ -s $watched_events ]] && break; sleep 0.01; done
+  kill "$watcher_pid" 2>/dev/null || true
+  wait "$watcher_pid" 2>/dev/null || true
+  event_count="$(wc -l <"$watched_events")"
+  (( event_count == 1 )) || fail "import exposed $event_count writes inside the watched plugin tree"
+fi
+
 large="$TMP/too-large.yaml"
 printf 'mode: rule\n012345678901234567890123456789\n' >"$large"
 if printf '%s\n' "$large" | env "${common_env[@]}" MIHOMO_SUBSCRIPTION_MAX_BYTES=20 \
@@ -150,4 +173,4 @@ if printf '%s\n' "$large" | env "${common_env[@]}" MIHOMO_SUBSCRIPTION_MAX_BYTES
 fi
 assert_eq "$(env MIHOMO_SUBSCRIPTION_TESTING=1 MIHOMO_SUBSCRIPTION_DATA="$data" "$STATUS" | jq -r .count)" 4
 
-echo "subscription_tests=ok local_duplicates=2 url_dedup=1 proxy_inherited=1 direct_without_proxy=1 atomic_failure=1"
+echo "subscription_tests=ok local_duplicates=2 url_dedup=1 proxy_inherited=1 direct_without_proxy=1 watched_commit_events=1 atomic_failure=1"

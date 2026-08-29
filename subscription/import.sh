@@ -4,11 +4,13 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 DATA_DIR="$PLUGIN_DIR/data/subscriptions"
+CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/fatlj-mihomo-subscription"
 MAX_BYTES=8388608
 WORK=""
 
 if [[ ${MIHOMO_SUBSCRIPTION_TESTING:-0} == 1 ]]; then
   DATA_DIR="${MIHOMO_SUBSCRIPTION_DATA:-$DATA_DIR}"
+  CACHE_ROOT="${MIHOMO_SUBSCRIPTION_CACHE:-$CACHE_ROOT}"
   MAX_BYTES="${MIHOMO_SUBSCRIPTION_MAX_BYTES:-$MAX_BYTES}"
 fi
 
@@ -84,10 +86,15 @@ IFS= read -r source || die "Enter a local file path or HTTP(S) URL"
 [[ $MAX_BYTES =~ ^[0-9]+$ ]] || die "Invalid subscription size limit"
 
 umask 077
-mkdir -p "$DATA_DIR"
-chmod 0700 "$PLUGIN_DIR/data" "$DATA_DIR" 2>/dev/null || true
-[[ ! -L $DATA_DIR ]] || die "Subscription directory must not be a symbolic link"
-WORK="$(mktemp -d "$DATA_DIR/.import.XXXXXX")"
+mkdir -p "$DATA_DIR" "$CACHE_ROOT"
+chmod 0700 "$(dirname "$DATA_DIR")" "$DATA_DIR" "$CACHE_ROOT" 2>/dev/null || true
+[[ ! -L $(dirname "$DATA_DIR") && ! -L $DATA_DIR ]] ||
+  die "Subscription data directories must not be symbolic links"
+[[ $(stat -Lc %d "$DATA_DIR") == $(stat -Lc %d "$CACHE_ROOT") ]] ||
+  die "Subscription cache and plugin data must be on the same filesystem"
+# All downloads, copies, and Mihomo validation happen outside the recursively
+# watched plugin tree. Only the final atomic rename is visible to Omarchy.
+WORK="$(mktemp -d "$CACHE_ROOT/import.XXXXXX")"
 candidate="$WORK/config.yaml"
 kind=""
 label=""
@@ -128,7 +135,7 @@ chmod 0600 "$candidate"
 bytes="$(validate_size "$candidate")"
 validate_config "$candidate"
 
-exec 9>"$DATA_DIR/.lock"
+exec 9>"$CACHE_ROOT/import.lock"
 flock 9
 
 if [[ $kind == url ]]; then
