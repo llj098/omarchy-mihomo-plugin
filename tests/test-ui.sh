@@ -28,7 +28,7 @@ fi
 jq -e '
   .schemaVersion == 1
   and .id == "fatlj.mihomo"
-  and .version == "0.7.2"
+  and .version == "0.7.3"
   and (.kinds | index("bar-widget") != null)
   and .entryPoints.barWidget == "Panel.qml"
   and .barWidget.defaultSection == "right"
@@ -93,7 +93,9 @@ if grep -Fq 'draftRuntimePort !== 7890' "$PANEL" || grep -Fq 'reserved for Clash
   fail "port 7890 is still reserved"
 fi
 grep -Fq 'id: runtimePortInput' "$PANEL" || fail "runtime port text input is missing"
-grep -Fq 'Layout.preferredWidth: Style.spacing.numberFieldWidth' "$PANEL" || fail "runtime port field does not use the compact official width"
+grep -Fq 'portFontMetrics.advanceWidth("00000")' "$PANEL" || fail "runtime port field is not sized for five digits"
+grep -Fq 'maximumLength: 5' "$PANEL" || fail "runtime port field does not enforce five-character input"
+grep -Fq 'horizontalAlignment: TextInput.AlignHCenter' "$PANEL" || fail "runtime port text is not centered"
 grep -Fq 'onTextEdited: root.draftRuntimePortText = text' "$PANEL" || fail "runtime port draft does not update while typing"
 grep -Fq 'readonly property bool settingsDirty: draftRuntimePortText !== String(savedRuntimePort)' "$PANEL" || fail "Apply visibility does not follow typed text immediately"
 grep -Fq 'id: allowLanControl' "$PANEL" || fail "port and Allow LAN are not in one config row"

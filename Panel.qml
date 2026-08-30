@@ -1059,12 +1059,18 @@ Panel {
             fontFamily: root.fontFamily
           }
 
+          FontMetrics {
+            id: portFontMetrics
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+          }
+
           RowLayout {
             width: parent.width
             spacing: Style.space(8)
 
             Text {
-              text: "Mixed port"
+              text: "Port"
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
@@ -1073,10 +1079,15 @@ Panel {
 
             TextField {
               id: runtimePortInput
-              Layout.preferredWidth: Style.spacing.numberFieldWidth
+              readonly property real compactWidth: portFontMetrics.advanceWidth("00000")
+                + leftPadding + rightPadding
+              Layout.preferredWidth: compactWidth
+              Layout.maximumWidth: compactWidth
               text: root.draftRuntimePortText
+              maximumLength: 5
               validator: IntValidator { bottom: 1024; top: 65535 }
               inputMethodHints: Qt.ImhDigitsOnly
+              horizontalAlignment: TextInput.AlignHCenter
               foreground: root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
