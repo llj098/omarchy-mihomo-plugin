@@ -28,7 +28,7 @@ fi
 jq -e '
   .schemaVersion == 1
   and .id == "fatlj.mihomo"
-  and .version == "0.7.1"
+  and .version == "0.7.2"
   and (.kinds | index("bar-widget") != null)
   and .entryPoints.barWidget == "Panel.qml"
   and .barWidget.defaultSection == "right"
@@ -70,7 +70,7 @@ jq -e '
 
 # Style is inherited from Omarchy's UI kit, not reproduced with local colors,
 # pixel constants, or custom popup chrome.
-for component in Panel BarIconButton KeyboardPanel PanelKeyCatcher PanelHero CursorSurface Button TextField NumberField ToggleSwitch PanelSeparator PanelSectionHeader; do
+for component in Panel BarIconButton KeyboardPanel PanelKeyCatcher PanelHero CursorSurface Button TextField ToggleSwitch PanelSeparator PanelSectionHeader; do
   grep -Eq "(^|[[:space:]])${component}[[:space:]]*\\{" "$PANEL" || fail "missing Omarchy UI component: $component"
 done
 grep -Fq 'visible: root.bootstrapAvailable' "$PANEL" || fail "Bootstrap visibility is not state-gated"
@@ -88,17 +88,18 @@ text = pathlib.Path(sys.argv[1]).read_text()
 markers = ['("SUBSCRIPTIONS · " + root.subscriptionCount)', 'text: "CONFIG"', 'text: "BOOTSTRAP"']
 assert [text.index(marker) for marker in markers] == sorted(text.index(marker) for marker in markers)
 PY
-grep -Fq 'from: 1024' "$PANEL" || fail "runtime port minimum is not wired"
-grep -Fq 'to: 65535' "$PANEL" || fail "runtime port maximum is not wired"
+grep -Fq 'validator: IntValidator { bottom: 1024; top: 65535 }' "$PANEL" || fail "runtime port range is not wired"
 if grep -Fq 'draftRuntimePort !== 7890' "$PANEL" || grep -Fq 'reserved for Clash Verge' "$PANEL"; then
   fail "port 7890 is still reserved"
 fi
-grep -Fq 'fieldWidth: Style.spacing.numberFieldWidth' "$PANEL" || fail "runtime port field does not use the compact official width"
-if grep -Fq 'width: parent.width - allowLanControl.width' "$PANEL"; then fail "runtime port field still fills the config row"; fi
+grep -Fq 'id: runtimePortInput' "$PANEL" || fail "runtime port text input is missing"
+grep -Fq 'Layout.preferredWidth: Style.spacing.numberFieldWidth' "$PANEL" || fail "runtime port field does not use the compact official width"
+grep -Fq 'onTextEdited: root.draftRuntimePortText = text' "$PANEL" || fail "runtime port draft does not update while typing"
+grep -Fq 'readonly property bool settingsDirty: draftRuntimePortText !== String(savedRuntimePort)' "$PANEL" || fail "Apply visibility does not follow typed text immediately"
 grep -Fq 'id: allowLanControl' "$PANEL" || fail "port and Allow LAN are not in one config row"
 grep -Fq 'checked: root.draftAllowLan' "$PANEL" || fail "Allow LAN draft toggle is not wired"
 grep -Fq 'command: [root.subscriptionControlScript, "apply"]' "$PANEL" || fail "Apply is not wired to runtime control"
-grep -Fq 'root.draftRuntimePort = previousPort' "$PANEL" || fail "failed Apply does not restore the previous port in the UI"
+grep -Fq 'root.draftRuntimePortText = String(previousPort)' "$PANEL" || fail "failed Apply does not restore the previous port in the UI"
 grep -Fq 'root.draftAllowLan = previousAllowLan' "$PANEL" || fail "failed Apply does not restore the previous Allow LAN value in the UI"
 grep -Fq 'visible: root.savedAllowLan' "$PANEL" || fail "UFW review is not always shown for applied Allow LAN"
 grep -Fq 'command: [root.ufwScript, "launch", String(root.savedRuntimePort)]' "$PANEL" || fail "UFW review does not use the floating-terminal helper"
@@ -136,4 +137,4 @@ if grep -Eq '#[[:xdigit:]]{3,8}|font\.pixelSize:[[:space:]]*[0-9]|spacing:[[:spa
   fail "panel contains hard-coded visual tokens"
 fi
 
-echo "ui_tests=ok missing_state=1 ready_state=1 runtime_settings=1 port_7890=1 compact_port_field=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"
+echo "ui_tests=ok missing_state=1 ready_state=1 runtime_settings=1 port_7890=1 inline_config=1 immediate_apply=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"

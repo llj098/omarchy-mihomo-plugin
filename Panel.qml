@@ -44,7 +44,8 @@ Panel {
   property bool settingsLoaded: false
   property int savedRuntimePort: 7891
   property bool savedAllowLan: false
-  property int draftRuntimePort: 7891
+  property string draftRuntimePortText: "7891"
+  readonly property int draftRuntimePort: Number(draftRuntimePortText)
   property bool draftAllowLan: false
   property string settingsError: ""
   property string settingsMessage: ""
@@ -68,9 +69,9 @@ Panel {
   readonly property bool bootstrapBusy: bootstrapProc.running
   readonly property bool subscriptionBusy: subscriptionImportProc.running
   readonly property bool runtimeBusy: nodeStartProc.running || nodeStopProc.running || settingsApplyProc.running
-  readonly property bool settingsValid: draftRuntimePort === Math.floor(draftRuntimePort)
+  readonly property bool settingsValid: /^[0-9]+$/.test(draftRuntimePortText)
     && draftRuntimePort >= 1024 && draftRuntimePort <= 65535
-  readonly property bool settingsDirty: draftRuntimePort !== savedRuntimePort
+  readonly property bool settingsDirty: draftRuntimePortText !== String(savedRuntimePort)
     || draftAllowLan !== savedAllowLan
   readonly property string subscriptionFailure: subscriptionError !== "" ? subscriptionError : subscriptionStatusError
 
@@ -127,7 +128,7 @@ Panel {
         savedRuntimePort = parsed.settings.port
         savedAllowLan = parsed.settings.allowLan
         if (!preserveDraft) {
-          draftRuntimePort = savedRuntimePort
+          draftRuntimePortText = String(savedRuntimePort)
           draftAllowLan = savedAllowLan
         }
         settingsLoaded = true
@@ -459,7 +460,7 @@ Panel {
       } else {
         root.savedRuntimePort = previousPort
         root.savedAllowLan = previousAllowLan
-        root.draftRuntimePort = previousPort
+        root.draftRuntimePortText = String(previousPort)
         root.draftAllowLan = previousAllowLan
         root.settingsMessage = ""
         root.settingsError = String(settingsApplyStderr.text || "Could not apply runtime settings").trim()
@@ -588,7 +589,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: subscriptionInput.activeFocus || runtimePortField.field.activeFocus
+      blocked: subscriptionInput.activeFocus || runtimePortInput.activeFocus
       onMoveRequested: function(dx, dy) {
         if (root.bootstrapAvailable) root.cursorActive = true
       }
@@ -1058,38 +1059,47 @@ Panel {
             fontFamily: root.fontFamily
           }
 
-          Row {
+          RowLayout {
             width: parent.width
-            spacing: Style.space(12)
+            spacing: Style.space(8)
 
-            NumberField {
-              id: runtimePortField
-              fieldWidth: Style.spacing.numberFieldWidth
-              label: "Mixed port"
-              from: 1024
-              to: 65535
-              value: root.draftRuntimePort
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-              onModified: function(value) { root.draftRuntimePort = value }
+            Text {
+              text: "Mixed port"
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              Layout.alignment: Qt.AlignVCenter
             }
 
-            Column {
+            TextField {
+              id: runtimePortInput
+              Layout.preferredWidth: Style.spacing.numberFieldWidth
+              text: root.draftRuntimePortText
+              validator: IntValidator { bottom: 1024; top: 65535 }
+              inputMethodHints: Qt.ImhDigitsOnly
+              foreground: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              Layout.alignment: Qt.AlignVCenter
+              onTextEdited: root.draftRuntimePortText = text
+            }
+
+            Item { Layout.fillWidth: true }
+
+            Text {
+              text: "Allow LAN"
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              Layout.alignment: Qt.AlignVCenter
+            }
+
+            ToggleSwitch {
               id: allowLanControl
-              spacing: Style.spacing.md
-
-              Text {
-                text: "Allow LAN"
-                color: Qt.darker(root.foreground, 1.4)
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.bodySmall
-              }
-
-              ToggleSwitch {
-                checked: root.draftAllowLan
-                foreground: root.foreground
-                onToggled: root.draftAllowLan = !root.draftAllowLan
-              }
+              checked: root.draftAllowLan
+              foreground: root.foreground
+              Layout.alignment: Qt.AlignVCenter
+              onToggled: root.draftAllowLan = !root.draftAllowLan
             }
           }
 
