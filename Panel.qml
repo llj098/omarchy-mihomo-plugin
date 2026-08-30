@@ -205,8 +205,11 @@ Panel {
     runtimeStatsAvailable = true
   }
 
-  function refreshRuntime() {
-    if (!runtimeStatusProc.running) runtimeStatusProc.running = true
+  function refreshRuntime(includeDetails) {
+    if (runtimeStatusProc.running) return
+    runtimeStatusProc.includeDetails = includeDetails === true
+      || (includeDetails === undefined && opened)
+    runtimeStatusProc.running = true
   }
 
   function startNode(subscriptionId, nodeName) {
@@ -354,17 +357,11 @@ Panel {
       cursorActive = bootstrapAvailable
       refreshStatus()
       refreshSubscriptions()
-      refreshRuntime()
+      refreshRuntime(true)
     }
   }
 
   onBootstrapAvailableChanged: if (!bootstrapAvailable) cursorActive = false
-
-  Component.onCompleted: {
-    refreshStatus()
-    refreshSubscriptions()
-    refreshRuntime()
-  }
 
   Process {
     id: statusProc
@@ -449,7 +446,8 @@ Panel {
 
   Process {
     id: runtimeStatusProc
-    command: [root.subscriptionControlScript, "status"]
+    property bool includeDetails: false
+    command: [root.subscriptionControlScript, includeDetails ? "details" : "status"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: root.applyRuntimeStatus(text)
@@ -609,13 +607,13 @@ Panel {
   }
 
   Timer {
-    interval: (bootstrapProc.running || root.runtimeBusy || root.runtimeRunning) ? 2000 : 30000
-    running: root.opened || bootstrapProc.running || root.runtimeRunning
+    interval: 2000
+    running: root.opened || bootstrapProc.running
     repeat: true
     onTriggered: {
       root.refreshStatus()
       root.refreshSubscriptions()
-      root.refreshRuntime()
+      root.refreshRuntime(root.opened)
     }
   }
 

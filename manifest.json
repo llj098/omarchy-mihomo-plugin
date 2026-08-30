@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "fatlj.mihomo",
   "name": "Mihomo",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "author": "fatlj",
   "description": "Bootstrap Mihomo, browse subscription groups and nodes, and configure a selected-node runtime from a native Omarchy bar panel.",
   "kinds": [

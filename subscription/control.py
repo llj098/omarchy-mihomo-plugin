@@ -450,7 +450,7 @@ def controller_statistics(state_root: Path, node_name: str, running: bool):
         return unavailable
 
 
-def status():
+def status(include_statistics=False):
     _, state_root = paths()
     selection = read_selection(state_root)
     settings = load_settings(state_root)
@@ -470,7 +470,8 @@ def status():
         "bindAddress": str(selection.get("bindAddress", "127.0.0.1")),
         "startedAt": str(selection.get("startedAt", "")),
         "settings": settings,
-        "statistics": controller_statistics(state_root, node_name, running),
+        "statistics": controller_statistics(state_root, node_name, running)
+        if include_statistics else {"available": False},
     }
 
 
@@ -559,6 +560,8 @@ def main():
     try:
         if command == "status":
             result = status()
+        elif command == "details":
+            result = status(include_statistics=True)
         elif command in {"start", "stop", "apply"}:
             _, state_root = paths()
             state_root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -573,7 +576,7 @@ def main():
                 else:
                     result = stop()
         else:
-            raise ControlError("Usage: control.py start|status|stop|apply")
+            raise ControlError("Usage: control.py start|status|details|stop|apply")
     except ControlError as error:
         print(str(error), file=sys.stderr)
         raise SystemExit(1)

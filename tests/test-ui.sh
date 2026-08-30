@@ -28,7 +28,7 @@ fi
 jq -e '
   .schemaVersion == 1
   and .id == "fatlj.mihomo"
-  and .version == "0.8.0"
+  and .version == "0.8.1"
   and (.kinds | index("bar-widget") != null)
   and .entryPoints.barWidget == "Panel.qml"
   and .barWidget.defaultSection == "right"
@@ -136,6 +136,10 @@ grep -Fq 'iconText: "󰓅"' "$PANEL" || fail "latency action does not use the of
 grep -Fq ': "Speed Test"' "$PANEL" || fail "latency action tooltip is missing"
 grep -Fq 'Layout.alignment: Qt.AlignVCenter' "$PANEL" || fail "latency action is not vertically aligned"
 grep -Fq 'updateRuntimeStatistics(parsed.statistics, runtimeRunning)' "$PANEL" || fail "Controller statistics are not applied"
+grep -Fq 'command: [root.subscriptionControlScript, includeDetails ? "details" : "status"]' "$PANEL" || fail "Controller details are not separated from basic status"
+grep -Fq 'running: root.opened || bootstrapProc.running' "$PANEL" || fail "status polling continues while the panel is closed"
+grep -Fq 'root.refreshRuntime(root.opened)' "$PANEL" || fail "Controller polling is not gated by panel visibility"
+if grep -Fq 'Component.onCompleted:' "$PANEL"; then fail "plugin fetches status during background load"; fi
 grep -Fq 'RuntimeInfoLabel { text: "Receiving" }' "$PANEL" || fail "Mihomo receiving rate is missing"
 grep -Fq 'RuntimeInfoLabel { text: "Sending" }' "$PANEL" || fail "Mihomo sending rate is missing"
 grep -Fq 'RuntimeInfoLabel { text: "Downloaded" }' "$PANEL" || fail "Mihomo download total is missing"
@@ -151,4 +155,4 @@ if grep -Eq '#[[:xdigit:]]{3,8}|font\.pixelSize:[[:space:]]*[0-9]|spacing:[[:spa
   fail "panel contains hard-coded visual tokens"
 fi
 
-echo "ui_tests=ok missing_state=1 ready_state=1 runtime_statistics=1 main_controller_latency=1 network_style_grid=1 runtime_settings=1 port_7890=1 inline_config=1 immediate_apply=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"
+echo "ui_tests=ok on_demand_polling=1 no_background_load=1 runtime_statistics=1 main_controller_latency=1 network_style_grid=1 runtime_settings=1 port_7890=1 inline_config=1 immediate_apply=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"
