@@ -629,19 +629,7 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: ""
-    fontSize: Style.font.title
-    iconComponent: Component {
-      Text {
-        anchors.centerIn: parent
-        text: "M"
-        color: button.foreground
-        font.family: root.fontFamily
-        font.pixelSize: button.fontSize
-        font.weight: root.runtimeRunning ? Font.Black : Font.Normal
-        renderType: Text.NativeRendering
-      }
-    }
+    text: root.runtimeRunning ? "󰰐" : "󰰑"
     dimmed: root.runtimeStatusLoaded
       && !(root.runtimeRunning || root.runtimeBusy || root.subscriptionBusy || root.bootstrapBusy)
     active: false
