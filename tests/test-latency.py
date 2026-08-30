@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 import importlib.util
+import json
+import socket
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -29,16 +32,48 @@ except latency.LatencyError:
 else:
     raise AssertionError("group without concrete nodes was accepted")
 
-runtime = latency.prepare_document(document, ["Node A", "Node B"])
-assert "mixed-port" not in runtime
-assert runtime["allow-lan"] is False
-assert runtime["bind-address"] == "127.0.0.1"
-assert "listen" not in runtime["dns"]
-assert runtime["rules"] == ["MATCH,DIRECT"]
-test_group = [group for group in runtime["proxy-groups"] if group.get("name") == latency.TEST_GROUP]
-assert test_group == [{"name": latency.TEST_GROUP, "type": "select", "proxies": ["Node A", "Node B"]}]
-
 no_groups = {"proxies": document["proxies"]}
 assert latency.group_nodes(no_groups, "ALL NODES") == ["Node A", "Node B", "Node C"]
 
-print("latency_tests=ok group_members=1 nested_group_rejected=1 isolated_config=1")
+with tempfile.TemporaryDirectory() as temporary:
+    state_root = Path(temporary)
+    runtime = state_root / "runtime"
+    runtime.mkdir()
+    controller = runtime / "controller.sock"
+    (state_root / "selection.json").write_text(
+        json.dumps({"subscriptionId": "active-sub"}), encoding="utf-8"
+    )
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
+        server.bind(str(controller))
+        assert latency.active_controller(state_root, "active-sub") == controller
+        try:
+            latency.active_controller(state_root, "other-sub")
+        except latency.LatencyError as error:
+            assert "this subscription" in str(error)
+        else:
+            raise AssertionError("inactive subscription was allowed to use the main Controller")
+
+original_query_group = latency.query_group
+original_query_proxy = latency.query_proxy
+try:
+    group_calls = []
+    latency.query_group = lambda socket_path, group_name, test_url: group_calls.append(
+        (socket_path, group_name, test_url)
+    ) or {"Node A": 12, "Node B": 34}
+    assert latency.query_delays(Path("/tmp/controller.sock"), "PROXY", ["Node A", "Node B"], "https://test") == {
+        "Node A": 12, "Node B": 34
+    }
+    assert group_calls == [(Path("/tmp/controller.sock"), "PROXY", "https://test")]
+
+    latency.query_proxy = lambda _socket, name, _url: {"Node A": 56, "Node C": None}[name]
+    assert latency.query_delays(
+        Path("/tmp/controller.sock"), "UNGROUPED", ["Node A", "Node C"], "https://test"
+    ) == {"Node A": 56, "Node C": None}
+finally:
+    latency.query_group = original_query_group
+    latency.query_proxy = original_query_proxy
+
+assert not hasattr(latency, "subprocess")
+assert not hasattr(latency, "tempfile")
+
+print("latency_tests=ok group_members=1 active_main_controller=1 native_group_api=1 no_temporary_mihomo=1")

@@ -28,7 +28,7 @@ fi
 jq -e '
   .schemaVersion == 1
   and .id == "fatlj.mihomo"
-  and .version == "0.7.4"
+  and .version == "0.8.0"
   and (.kinds | index("bar-widget") != null)
   and .entryPoints.barWidget == "Panel.qml"
   and .barWidget.defaultSection == "right"
@@ -120,6 +120,8 @@ grep -Fq 'onTapped: root.toggleGroup(' "$PANEL" || fail "group header toggle is 
 grep -Fq 'model: groupList.expanded ? (groupList.group.members || []) : []' "$PANEL" || fail "collapsed groups still instantiate members"
 grep -Fq 'command: [root.latencyScript]' "$PANEL" || fail "latency helper is not wired"
 grep -Fq 'visible: groupList.group.directNodeCount > 0' "$PANEL" || fail "group latency button is not gated by concrete nodes"
+grep -Fq 'readonly property bool controllerAvailable: root.runtimeRunning' "$PANEL" || fail "latency action is not gated by the main Controller"
+grep -Fq 'enabled: controllerAvailable && !latencyProc.running' "$PANEL" || fail "latency action can run without the main Controller"
 grep -Fq 'onClicked: root.startLatency(' "$PANEL" || fail "group latency button is not clickable"
 grep -Fq 'memberSurface.latency.delayMs + " ms"' "$PANEL" || fail "node latency is not rendered beside the node"
 grep -Fq 'height: Math.min(contentHeight, Style.space(320))' "$PANEL" || fail "subscription node lists are not height-bounded"
@@ -131,8 +133,16 @@ grep -Fq 'startNode(activeSubscriptionId, activeNodeName)' "$PANEL" || fail "run
 grep -Fq 'text: root.activeNodeName' "$PANEL" || fail "active node is not shown in the hero"
 grep -Fq 'color: root.foreground' "$PANEL" || fail "hero node does not use the official foreground color"
 grep -Fq 'iconText: "󰓅"' "$PANEL" || fail "latency action does not use the official network meter icon"
-grep -Fq 'tooltipText: testing ? "Testing" : "Speed Test"' "$PANEL" || fail "latency action tooltip is missing"
+grep -Fq ': "Speed Test"' "$PANEL" || fail "latency action tooltip is missing"
 grep -Fq 'Layout.alignment: Qt.AlignVCenter' "$PANEL" || fail "latency action is not vertically aligned"
+grep -Fq 'updateRuntimeStatistics(parsed.statistics, runtimeRunning)' "$PANEL" || fail "Controller statistics are not applied"
+grep -Fq 'RuntimeInfoLabel { text: "Receiving" }' "$PANEL" || fail "Mihomo receiving rate is missing"
+grep -Fq 'RuntimeInfoLabel { text: "Sending" }' "$PANEL" || fail "Mihomo sending rate is missing"
+grep -Fq 'RuntimeInfoLabel { text: "Downloaded" }' "$PANEL" || fail "Mihomo download total is missing"
+grep -Fq 'RuntimeInfoLabel { text: "Uploaded" }' "$PANEL" || fail "Mihomo upload total is missing"
+grep -Fq 'RuntimeInfoLabel { text: "Connections" }' "$PANEL" || fail "Mihomo connection count is missing"
+grep -Fq 'RuntimeInfoLabel { text: "Latency" }' "$PANEL" || fail "Mihomo node latency is missing"
+grep -Fq 'component RuntimeInfoValue: Text' "$PANEL" || fail "Mihomo details do not use the Network-style value layout"
 grep -Fq 'dimmed: !(root.runtimeRunning || root.runtimeBusy || root.subscriptionBusy || root.bootstrapBusy)' "$PANEL" || fail "bar icon does not dim while inactive"
 grep -Fq 'active: false' "$PANEL" || fail "bar icon uses the red active treatment"
 grep -Fq 'implicitWidth: button.implicitWidth' "$PANEL" || fail "bar widget does not publish its button width"
@@ -141,4 +151,4 @@ if grep -Eq '#[[:xdigit:]]{3,8}|font\.pixelSize:[[:space:]]*[0-9]|spacing:[[:spa
   fail "panel contains hard-coded visual tokens"
 fi
 
-echo "ui_tests=ok missing_state=1 ready_state=1 runtime_settings=1 port_7890=1 inline_config=1 immediate_apply=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"
+echo "ui_tests=ok missing_state=1 ready_state=1 runtime_statistics=1 main_controller_latency=1 network_style_grid=1 runtime_settings=1 port_7890=1 inline_config=1 immediate_apply=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"

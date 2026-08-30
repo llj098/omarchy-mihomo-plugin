@@ -88,6 +88,31 @@ assert captured_commands[0][-2:] == [
     "-ext-ctl-unix", "/tmp/fatlj-runtime/controller.sock"
 ]
 
+original_controller_json = control.controller_json
+try:
+    control.controller_json = lambda _socket, endpoint: {
+        "/connections": {
+            "downloadTotal": 2048,
+            "uploadTotal": 1024,
+            "connections": [{"id": "a"}, {"id": "b"}],
+        },
+        "/proxies/Node%20A": {
+            "alive": True,
+            "history": [{"delay": 45}],
+        },
+    }[endpoint]
+    assert control.controller_statistics(Path("/tmp/state"), "Node A", True) == {
+        "available": True,
+        "downloadTotal": 2048,
+        "uploadTotal": 1024,
+        "activeConnections": 2,
+        "nodeAlive": True,
+        "nodeLatencyMs": 45,
+    }
+finally:
+    control.controller_json = original_controller_json
+assert control.controller_statistics(Path("/tmp/state"), "Node A", False) == {"available": False}
+
 for invalid_settings in (
     {"port": 1023, "allowLan": False},
     {"port": 65536, "allowLan": False},
@@ -245,4 +270,4 @@ with tempfile.TemporaryDirectory() as temporary:
             else:
                 os.environ[key] = value
 
-print("control_tests=ok settings_persistence=1 unix_controller=1 port_7890=1 occupied_port_guard=1 apply_rollback=1 traversal_rejected=1")
+print("control_tests=ok settings_persistence=1 unix_controller=1 controller_statistics=1 port_7890=1 occupied_port_guard=1 apply_rollback=1 traversal_rejected=1")

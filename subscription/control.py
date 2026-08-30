@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import fcntl
+import http.client
 import json
 import os
 import shutil
@@ -10,6 +11,7 @@ import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 try:
     import yaml
@@ -28,6 +30,17 @@ MAX_YAML_ALIASES = 100
 
 class ControlError(Exception):
     pass
+
+
+class UnixHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, socket_path: Path, timeout=1):
+        super().__init__("localhost", timeout=timeout)
+        self.socket_path = str(socket_path)
+
+    def connect(self):
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(self.timeout)
+        self.sock.connect(self.socket_path)
 
 
 class LimitedSafeLoader(yaml.SafeLoader):
@@ -384,25 +397,80 @@ def read_selection(state_root: Path):
     return {}
 
 
+def controller_json(socket_path: Path, endpoint: str):
+    connection = UnixHTTPConnection(socket_path)
+    try:
+        connection.request("GET", endpoint)
+        response = connection.getresponse()
+        payload = response.read()
+    finally:
+        connection.close()
+    if response.status != 200:
+        raise ControlError(f"Mihomo Controller returned HTTP {response.status}")
+    try:
+        value = json.loads(payload)
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise ControlError("Mihomo Controller returned invalid JSON") from error
+    if not isinstance(value, dict):
+        raise ControlError("Mihomo Controller returned an invalid response")
+    return value
+
+
+def controller_statistics(state_root: Path, node_name: str, running: bool):
+    unavailable = {"available": False}
+    if not running:
+        return unavailable
+    socket_path = state_root / "runtime" / "controller.sock"
+    try:
+        connections = controller_json(socket_path, "/connections")
+        items = connections.get("connections")
+        if not isinstance(items, list):
+            raise ControlError("Mihomo connection statistics are unavailable")
+        result = {
+            "available": True,
+            "downloadTotal": max(0, int(connections.get("downloadTotal", 0))),
+            "uploadTotal": max(0, int(connections.get("uploadTotal", 0))),
+            "activeConnections": len(items),
+            "nodeAlive": None,
+            "nodeLatencyMs": None,
+        }
+        if node_name:
+            proxy = controller_json(socket_path, f"/proxies/{quote(node_name, safe='')}")
+            if isinstance(proxy.get("alive"), bool):
+                result["nodeAlive"] = proxy["alive"]
+            history = proxy.get("history")
+            if isinstance(history, list):
+                for sample in reversed(history):
+                    if isinstance(sample, dict) and isinstance(sample.get("delay"), int):
+                        if sample["delay"] > 0:
+                            result["nodeLatencyMs"] = sample["delay"]
+                        break
+        return result
+    except (ControlError, OSError, ValueError, http.client.HTTPException):
+        return unavailable
+
+
 def status():
     _, state_root = paths()
     selection = read_selection(state_root)
     settings = load_settings(state_root)
     properties = unit_properties()
     running = properties["ActiveState"] == "active" and int(properties.get("MainPID", "0") or 0) > 0
+    node_name = str(selection.get("nodeName", ""))
     return {
         "running": running,
         "activeState": properties["ActiveState"],
         "subState": properties["SubState"],
         "pid": int(properties.get("MainPID", "0") or 0),
         "subscriptionId": str(selection.get("subscriptionId", "")),
-        "nodeName": str(selection.get("nodeName", "")),
+        "nodeName": node_name,
         "nodeType": str(selection.get("nodeType", "")),
         "port": int(selection.get("port", settings["port"])),
         "allowLan": selection.get("allowLan") is True,
         "bindAddress": str(selection.get("bindAddress", "127.0.0.1")),
         "startedAt": str(selection.get("startedAt", "")),
         "settings": settings,
+        "statistics": controller_statistics(state_root, node_name, running),
     }
 
 

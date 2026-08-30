@@ -1,22 +1,20 @@
 #!/usr/bin/env python3
+import concurrent.futures
 import http.client
 import json
 import os
-import signal
 import socket
-import subprocess
 import sys
-import tempfile
-import time
 from pathlib import Path
 from urllib.parse import quote, urlencode, urlsplit
 
 import yaml
 
 DEFAULT_TEST_URL = "https://www.gstatic.com/generate_204"
-TEST_GROUP = "__FATLJ_TEST__"
 TIMEOUT_MS = 5000
 MAX_CONFIG_BYTES = 8 * 1024 * 1024
+MAX_PARALLEL_TESTS = 32
+SYNTHETIC_GROUPS = {"ALL NODES", "UNGROUPED"}
 
 
 class LatencyError(Exception):
@@ -26,7 +24,7 @@ class LatencyError(Exception):
 class UnixHTTPConnection(http.client.HTTPConnection):
     def __init__(self, socket_path, timeout=10):
         super().__init__("localhost", timeout=timeout)
-        self.socket_path = socket_path
+        self.socket_path = str(socket_path)
 
     def connect(self):
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -37,10 +35,13 @@ class UnixHTTPConnection(http.client.HTTPConnection):
 def plugin_paths():
     script_dir = Path(__file__).resolve().parent
     data_dir = script_dir.parent / "data" / "subscriptions"
-    if os.environ.get("MIHOMO_LATENCY_TESTING") == "1" and os.environ.get("MIHOMO_SUBSCRIPTION_DATA"):
-        data_dir = Path(os.environ["MIHOMO_SUBSCRIPTION_DATA"])
-    runtime_root = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
-    return data_dir, runtime_root
+    state_root = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "fatlj.mihomo"
+    if os.environ.get("MIHOMO_LATENCY_TESTING") == "1":
+        if os.environ.get("MIHOMO_SUBSCRIPTION_DATA"):
+            data_dir = Path(os.environ["MIHOMO_SUBSCRIPTION_DATA"])
+        if os.environ.get("MIHOMO_LATENCY_STATE"):
+            state_root = Path(os.environ["MIHOMO_LATENCY_STATE"])
+    return data_dir, state_root
 
 
 def safe_subscription(data_dir, subscription_id):
@@ -102,38 +103,24 @@ def group_nodes(document, group_name):
     return selected
 
 
-def prepare_document(document, node_names):
-    runtime = dict(document)
-    for key in (
-        "mixed-port", "port", "socks-port", "redir-port", "tproxy-port",
-        "external-controller", "external-controller-unix", "external-controller-tls",
-        "external-ui", "external-ui-url", "secret", "listeners", "tun", "rule-providers",
-    ):
-        runtime.pop(key, None)
-    runtime["allow-lan"] = False
-    runtime["bind-address"] = "127.0.0.1"
-    runtime["mode"] = "rule"
-    runtime["log-level"] = "warning"
-    dns = runtime.get("dns")
-    if isinstance(dns, dict):
-        dns = dict(dns)
-        dns.pop("listen", None)
-        runtime["dns"] = dns
-    groups = runtime.get("proxy-groups", [])
-    if not isinstance(groups, list):
-        groups = []
-    groups = [group for group in groups if not (isinstance(group, dict) and group.get("name") == TEST_GROUP)]
-    groups.append({"name": TEST_GROUP, "type": "select", "proxies": node_names})
-    runtime["proxy-groups"] = groups
-    runtime["rules"] = ["MATCH,DIRECT"]
-    return runtime
-
-
-def query_group(socket_path, test_url):
-    query = urlencode({"url": test_url, "timeout": TIMEOUT_MS})
-    connection = UnixHTTPConnection(str(socket_path), timeout=TIMEOUT_MS / 1000 + 5)
+def active_controller(state_root: Path, subscription_id: str):
+    selection_file = state_root / "selection.json"
     try:
-        connection.request("GET", f"/group/{quote(TEST_GROUP, safe='')}/delay?{query}")
+        selection = json.loads(selection_file.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise LatencyError("Start Mihomo before running a speed test") from error
+    if not isinstance(selection, dict) or selection.get("subscriptionId") != subscription_id:
+        raise LatencyError("Start a node from this subscription before running its speed test")
+    socket_path = state_root / "runtime" / "controller.sock"
+    if not socket_path.is_socket():
+        raise LatencyError("The running Mihomo Controller is unavailable")
+    return socket_path
+
+
+def query_json(socket_path: Path, endpoint: str):
+    connection = UnixHTTPConnection(socket_path, timeout=TIMEOUT_MS / 1000 + 5)
+    try:
+        connection.request("GET", endpoint)
         response = connection.getresponse()
         payload = response.read()
     finally:
@@ -147,6 +134,30 @@ def query_group(socket_path, test_url):
     if not isinstance(result, dict):
         raise LatencyError("Mihomo latency response was not a mapping")
     return result
+
+
+def query_group(socket_path: Path, group_name: str, test_url: str):
+    query = urlencode({"url": test_url, "timeout": TIMEOUT_MS})
+    return query_json(socket_path, f"/group/{quote(group_name, safe='')}/delay?{query}")
+
+
+def query_proxy(socket_path: Path, node_name: str, test_url: str):
+    query = urlencode({"url": test_url, "timeout": TIMEOUT_MS})
+    try:
+        result = query_json(socket_path, f"/proxies/{quote(node_name, safe='')}/delay?{query}")
+    except (LatencyError, OSError, http.client.HTTPException):
+        return None
+    delay = result.get("delay")
+    return delay if isinstance(delay, int) and delay > 0 else None
+
+
+def query_delays(socket_path: Path, group_name: str, node_names, test_url: str):
+    if group_name not in SYNTHETIC_GROUPS:
+        return query_group(socket_path, group_name, test_url)
+    workers = min(MAX_PARALLEL_TESTS, len(node_names))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        delays = executor.map(lambda name: query_proxy(socket_path, name, test_url), node_names)
+        return dict(zip(node_names, delays))
 
 
 def main():
@@ -167,63 +178,29 @@ def main():
         print("Latency URL must use HTTP or HTTPS", file=sys.stderr)
         return 1
 
-    data_dir, runtime_root = plugin_paths()
-    process = None
+    data_dir, state_root = plugin_paths()
     try:
         config = safe_subscription(data_dir, subscription_id)
         document = load_document(config)
         names = group_nodes(document, group_name)
-        runtime = prepare_document(document, names)
-        with tempfile.TemporaryDirectory(prefix="fatlj-mihomo-latency-", dir=runtime_root) as temporary:
-            directory = Path(temporary)
-            runtime_config = directory / "config.yaml"
-            runtime_config.write_text(yaml.safe_dump(runtime, allow_unicode=True, sort_keys=False), encoding="utf-8")
-            os.chmod(runtime_config, 0o600)
-            for geoip in (Path("/etc/mihomo/Country.mmdb"), Path("/etc/clash/Country.mmdb")):
-                if geoip.is_file() and geoip.stat().st_size > 0:
-                    (directory / "Country.mmdb").symlink_to(geoip)
-                    break
-            socket_path = directory / "controller.sock"
-            process = subprocess.Popen(
-                ["/usr/bin/mihomo", "-d", str(directory), "-f", str(runtime_config),
-                 "-ext-ctl-unix", str(socket_path)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            for _ in range(100):
-                if socket_path.is_socket():
-                    break
-                if process.poll() is not None:
-                    raise LatencyError("Temporary Mihomo exited before its controller was ready")
-                time.sleep(0.05)
-            if not socket_path.is_socket():
-                raise LatencyError("Temporary Mihomo controller did not become ready")
-            delays = query_group(socket_path, test_url)
-            results = []
-            for name in names:
-                delay = delays.get(name)
-                if isinstance(delay, int) and delay > 0:
-                    results.append({"name": name, "status": "ok", "delayMs": delay})
-                else:
-                    results.append({"name": name, "status": "timeout", "delayMs": None})
-            json.dump({"subscriptionId": subscription_id, "groupName": group_name,
-                       "url": test_url, "results": results}, sys.stdout,
-                      ensure_ascii=False, separators=(",", ":"))
-            sys.stdout.write("\n")
-    except (LatencyError, OSError, subprocess.SubprocessError, yaml.YAMLError) as error:
+        socket_path = active_controller(state_root, subscription_id)
+        delays = query_delays(socket_path, group_name, names, test_url)
+        results = []
+        for name in names:
+            delay = delays.get(name)
+            if isinstance(delay, int) and delay > 0:
+                results.append({"name": name, "status": "ok", "delayMs": delay})
+            else:
+                results.append({"name": name, "status": "timeout", "delayMs": None})
+        json.dump({"subscriptionId": subscription_id, "groupName": group_name,
+                   "url": test_url, "results": results}, sys.stdout,
+                  ensure_ascii=False, separators=(",", ":"))
+        sys.stdout.write("\n")
+    except (LatencyError, OSError, http.client.HTTPException, yaml.YAMLError) as error:
         print(str(error), file=sys.stderr)
         return 1
-    finally:
-        if process is not None and process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
     return 0
 
 
 if __name__ == "__main__":
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     raise SystemExit(main())

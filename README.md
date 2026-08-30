@@ -70,13 +70,15 @@ Downloads and local copies are limited to 8 MiB. Every candidate must pass `miho
 
 Clicking an inline node generates an isolated runtime configuration and starts a transient user service named `fatlj-mihomo.service`. Runtime settings default to mixed port `7891` and localhost-only binding, leaving any existing service on `7890` untouched. Any port in `1024..65535`, including `7890`, and **Allow LAN** are drafts until **Apply** is clicked. An occupied target port is rejected without interrupting the running Mihomo instance. Settings are atomically saved mode 0600 at `~/.local/state/fatlj.mihomo/settings.json`; Apply restarts the same selected node only when this plugin runtime is active, otherwise it affects the next start. A failed restart restores the previous settings and attempts to restore the previous running endpoint. The panel highlights the active node, shows the runtime endpoint, and provides **Stop Mihomo**.
 
+The main runtime always exposes its Controller through `~/.local/state/fatlj.mihomo/runtime/controller.sock`, inside the mode-0700 state directory; no TCP Controller is opened. The panel reads active connections, current transfer rates, totals, and selected-node health from that running process. Group speed tests also use this same Controller. They are available only for the active subscription while Mihomo is running and never launch a second temporary Mihomo process.
+
 When applied **Allow LAN** is enabled, the panel always shows **Review UFW rule**. It opens Omarchy's floating terminal and, after verifying UFW exists, clearly warns that `ufw allow PORT/tcp` permits all UFW-accepted sources. Only explicit Gum confirmation runs `sudo ufw status` and `sudo ufw allow PORT/tcp`; the plugin does not inspect UFW silently, enable/disable it, remove old rules, or support other firewall backends. Password input remains entirely inside sudo's terminal prompt.
 
 The original subscription is never modified. The generated configuration:
 
 - retains the subscription's proxy definitions and DNS resolvers;
 - creates a one-node `__FATLJ_ACTIVE__` select group and forces `MATCH` through it;
-- removes imported HTTP/SOCKS/redir/TProxy/controller/listener/TUN ports and rule providers;
+- removes imported HTTP/SOCKS/redir/TProxy/controller/listener/TUN ports and rule providers, then supplies the plugin-owned Unix Controller at process launch;
 - removes the DNS listener while retaining internal DNS behavior;
 - sets `mixed-port`, `allow-lan`, and `bind-address` from the saved runtime settings (`127.0.0.1` when disabled, `0.0.0.0` when enabled);
 - is validated with `mihomo -t` before replacing the active runtime.

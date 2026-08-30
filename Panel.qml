@@ -41,6 +41,18 @@ Panel {
   property string activeNodeType: ""
   property int runtimePort: 7891
   property string runtimeBindAddress: "127.0.0.1"
+  property bool runtimeStatsAvailable: false
+  property bool runtimeRatesReady: false
+  property real runtimeDownloadRate: 0
+  property real runtimeUploadRate: 0
+  property real runtimeDownloadTotal: 0
+  property real runtimeUploadTotal: 0
+  property int runtimeActiveConnections: 0
+  property var runtimeNodeAlive: null
+  property int runtimeNodeLatencyMs: 0
+  property real previousRuntimeDownloadTotal: 0
+  property real previousRuntimeUploadTotal: 0
+  property real previousRuntimeSampleTime: 0
   property bool settingsLoaded: false
   property int savedRuntimePort: 7891
   property bool savedAllowLan: false
@@ -122,6 +134,7 @@ Panel {
       activeNodeType = String(parsed.nodeType || "")
       runtimePort = Number(parsed.port || 7891)
       runtimeBindAddress = String(parsed.bindAddress || "127.0.0.1")
+      updateRuntimeStatistics(parsed.statistics, runtimeRunning)
       if (parsed.settings && Number.isInteger(parsed.settings.port)
           && typeof parsed.settings.allowLan === "boolean") {
         var preserveDraft = settingsLoaded && settingsDirty && resetDraft !== true
@@ -136,6 +149,60 @@ Panel {
     } catch (error) {
       if (runtimeError === "") runtimeError = "Could not read Mihomo runtime status"
     }
+  }
+
+  function resetRuntimeStatistics() {
+    runtimeStatsAvailable = false
+    runtimeRatesReady = false
+    runtimeDownloadRate = 0
+    runtimeUploadRate = 0
+    runtimeDownloadTotal = 0
+    runtimeUploadTotal = 0
+    runtimeActiveConnections = 0
+    runtimeNodeAlive = null
+    runtimeNodeLatencyMs = 0
+    previousRuntimeDownloadTotal = 0
+    previousRuntimeUploadTotal = 0
+    previousRuntimeSampleTime = 0
+  }
+
+  function updateRuntimeStatistics(statistics, running) {
+    if (!running) {
+      resetRuntimeStatistics()
+      return
+    }
+    if (!statistics || statistics.available !== true) {
+      runtimeStatsAvailable = false
+      runtimeRatesReady = false
+      previousRuntimeSampleTime = 0
+      return
+    }
+    var now = Date.now() / 1000
+    var nextDownload = Number(statistics.downloadTotal || 0)
+    var nextUpload = Number(statistics.uploadTotal || 0)
+    if (previousRuntimeSampleTime > 0
+        && nextDownload >= previousRuntimeDownloadTotal
+        && nextUpload >= previousRuntimeUploadTotal) {
+      var elapsed = now - previousRuntimeSampleTime
+      if (elapsed > 0) {
+        runtimeDownloadRate = (nextDownload - previousRuntimeDownloadTotal) / elapsed
+        runtimeUploadRate = (nextUpload - previousRuntimeUploadTotal) / elapsed
+        runtimeRatesReady = true
+      }
+    } else {
+      runtimeDownloadRate = 0
+      runtimeUploadRate = 0
+      runtimeRatesReady = false
+    }
+    previousRuntimeDownloadTotal = nextDownload
+    previousRuntimeUploadTotal = nextUpload
+    previousRuntimeSampleTime = now
+    runtimeDownloadTotal = nextDownload
+    runtimeUploadTotal = nextUpload
+    runtimeActiveConnections = Number(statistics.activeConnections || 0)
+    runtimeNodeAlive = typeof statistics.nodeAlive === "boolean" ? statistics.nodeAlive : null
+    runtimeNodeLatencyMs = Number(statistics.nodeLatencyMs || 0)
+    runtimeStatsAvailable = true
   }
 
   function refreshRuntime() {
@@ -227,7 +294,7 @@ Panel {
   }
 
   function startLatency(subscriptionId, groupName) {
-    if (latencyProc.running) return
+    if (latencyProc.running || !runtimeRunning || subscriptionId !== activeSubscriptionId) return
     latencyError = ""
     latencyBusyKey = groupExpansionKey(subscriptionId, groupName)
     latencyProc.pendingRequest = JSON.stringify({subscriptionId: subscriptionId, groupName: groupName})
@@ -235,10 +302,16 @@ Panel {
   }
 
   function formatBytes(bytes) {
-    var value = Number(bytes || 0)
-    if (value < 1024) return value + " B"
-    if (value < 1024 * 1024) return (value / 1024).toFixed(1) + " KiB"
-    return (value / (1024 * 1024)).toFixed(1) + " MiB"
+    var value = Number(bytes)
+    if (!isFinite(value) || value < 0) value = 0
+    if (value < 1024) return Math.round(value) + " B"
+    if (value < 1024 * 1024) return (value / 1024).toFixed(1) + " KB"
+    if (value < 1024 * 1024 * 1024) return (value / (1024 * 1024)).toFixed(1) + " MB"
+    return (value / (1024 * 1024 * 1024)).toFixed(2) + " GB"
+  }
+
+  function formatRate(bytesPerSecond) {
+    return formatBytes(bytesPerSecond) + "/s"
   }
 
   function launchBootstrap() {
@@ -687,6 +760,49 @@ Panel {
           font.pixelSize: Style.font.bodySmall
           wrapMode: Text.WordWrap
         }
+
+        Column {
+          visible: root.runtimeRunning
+          width: parent.width
+          spacing: Style.spacing.labelGap
+
+          GridLayout {
+            width: parent.width
+            columns: 4
+            columnSpacing: Style.space(20)
+            rowSpacing: Style.spacing.labelGap
+
+            RuntimeInfoLabel { text: "Connections" }
+            RuntimeInfoValue {
+              text: root.runtimeStatsAvailable ? String(root.runtimeActiveConnections) : "--"
+            }
+            RuntimeInfoLabel { text: "Latency" }
+            RuntimeInfoValue {
+              text: root.runtimeNodeLatencyMs > 0 ? (root.runtimeNodeLatencyMs + " ms")
+                : root.runtimeNodeAlive === false ? "Offline" : "--"
+              color: root.runtimeNodeAlive === false ? root.urgent : root.foreground
+            }
+
+            RuntimeInfoLabel { text: "Receiving" }
+            RuntimeInfoValue {
+              text: root.runtimeRatesReady ? root.formatRate(root.runtimeDownloadRate) : "--"
+            }
+            RuntimeInfoLabel { text: "Sending" }
+            RuntimeInfoValue {
+              text: root.runtimeRatesReady ? root.formatRate(root.runtimeUploadRate) : "--"
+            }
+
+            RuntimeInfoLabel { text: "Downloaded" }
+            RuntimeInfoValue {
+              text: root.runtimeStatsAvailable ? root.formatBytes(root.runtimeDownloadTotal) : "--"
+            }
+            RuntimeInfoLabel { text: "Uploaded" }
+            RuntimeInfoValue {
+              text: root.runtimeStatsAvailable ? root.formatBytes(root.runtimeUploadTotal) : "--"
+            }
+          }
+        }
+
         PanelSeparator {
           visible: root.mihomoInstalled
           foreground: root.foreground
@@ -862,16 +978,21 @@ Panel {
                           id: groupTestButton
                           readonly property bool testing: root.latencyBusyKey === root.groupExpansionKey(
                             subscriptionList.subscription.id, groupList.group.name)
+                          readonly property bool controllerAvailable: root.runtimeRunning
+                            && root.activeSubscriptionId === subscriptionList.subscription.id
                           visible: groupList.group.directNodeCount > 0
                           iconText: "󰓅"
-                          tooltipText: testing ? "Testing" : "Speed Test"
+                          tooltipText: testing ? "Testing"
+                            : !root.runtimeRunning ? "Start Mihomo to test"
+                            : !controllerAvailable ? "Start a node from this subscription to test"
+                            : "Speed Test"
                           foreground: root.foreground
                           fontFamily: root.fontFamily
                           iconSize: Style.font.subtitle * 1.5
                           horizontalPadding: Style.space(5)
                           verticalPadding: Style.space(2)
-                          enabled: !latencyProc.running
-                          opacity: latencyProc.running && !testing ? 0.5 : 1.0
+                          enabled: controllerAvailable && !latencyProc.running
+                          opacity: (!controllerAvailable || (latencyProc.running && !testing)) ? 0.5 : 1.0
                           Layout.alignment: Qt.AlignVCenter
                           Layout.rightMargin: Style.space(4)
                           onClicked: root.startLatency(
@@ -1214,6 +1335,21 @@ Panel {
 
       }
     }
+  }
+
+  component RuntimeInfoLabel: Text {
+    color: root.foreground
+    opacity: 0.6
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.bodySmall
+  }
+
+  component RuntimeInfoValue: Text {
+    Layout.fillWidth: true
+    horizontalAlignment: Text.AlignRight
+    color: root.foreground
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.bodySmall
   }
 
   component NodePair: Row {
