@@ -1065,51 +1065,50 @@ Panel {
             font.pixelSize: Style.font.body
           }
 
-          RowLayout {
-            width: parent.width
-            spacing: Style.space(8)
+          Row {
+            anchors.horizontalCenter: parent.horizontalCenter
+            spacing: Style.space(10)
 
             Text {
-              text: "Port"
+              anchors.verticalCenter: parent.verticalCenter
+              text: "PORT"
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
-              Layout.alignment: Qt.AlignVCenter
+              font.letterSpacing: 1
             }
 
             TextField {
               id: runtimePortInput
               readonly property real compactWidth: portFontMetrics.advanceWidth("00000")
                 + leftPadding + rightPadding
-              Layout.preferredWidth: compactWidth
-              Layout.maximumWidth: compactWidth
+              width: compactWidth
+              anchors.verticalCenter: parent.verticalCenter
               text: root.draftRuntimePortText
               maximumLength: 5
               validator: IntValidator { bottom: 1024; top: 65535 }
               inputMethodHints: Qt.ImhDigitsOnly
-              horizontalAlignment: TextInput.AlignHCenter
               foreground: root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
-              Layout.alignment: Qt.AlignVCenter
               onTextEdited: root.draftRuntimePortText = text
             }
 
-            Item { Layout.fillWidth: true }
-
             Text {
-              text: "Allow LAN"
+              anchors.verticalCenter: parent.verticalCenter
+              leftPadding: Style.space(6)
+              text: "ALLOW LAN"
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
-              Layout.alignment: Qt.AlignVCenter
+              font.letterSpacing: 1
             }
 
             ToggleSwitch {
               id: allowLanControl
+              anchors.verticalCenter: parent.verticalCenter
               checked: root.draftAllowLan
               foreground: root.foreground
-              Layout.alignment: Qt.AlignVCenter
               onToggled: root.draftAllowLan = !root.draftAllowLan
             }
           }
