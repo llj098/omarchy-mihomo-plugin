@@ -129,6 +129,7 @@ def port_is_open(port):
 def port_is_available(port: int, allow_lan: bool = False):
     address = "0.0.0.0" if allow_lan else "127.0.0.1"
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             sock.bind((address, port))
         except OSError:
