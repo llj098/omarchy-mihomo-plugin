@@ -35,6 +35,7 @@ Panel {
   property bool cursorActive: false
   property var subscriptions: []
   property int subscriptionCount: 0
+  property bool runtimeStatusLoaded: false
   property bool runtimeRunning: false
   property string activeSubscriptionId: ""
   property string activeNodeName: ""
@@ -129,6 +130,7 @@ Panel {
     try {
       var parsed = JSON.parse(String(raw || "{}"))
       runtimeRunning = parsed.running === true
+      runtimeStatusLoaded = true
       activeSubscriptionId = String(parsed.subscriptionId || "")
       activeNodeName = String(parsed.nodeName || "")
       activeNodeType = String(parsed.nodeType || "")
@@ -627,9 +629,21 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: "M"
+    text: ""
     fontSize: Style.font.title
-    dimmed: !(root.runtimeRunning || root.runtimeBusy || root.subscriptionBusy || root.bootstrapBusy)
+    iconComponent: Component {
+      Text {
+        anchors.centerIn: parent
+        text: "M"
+        color: button.foreground
+        font.family: root.fontFamily
+        font.pixelSize: button.fontSize
+        font.weight: root.runtimeRunning ? Font.Black : Font.Normal
+        renderType: Text.NativeRendering
+      }
+    }
+    dimmed: root.runtimeStatusLoaded
+      && !(root.runtimeRunning || root.runtimeBusy || root.subscriptionBusy || root.bootstrapBusy)
     active: false
     tooltipText: root.runtimeBusy ? "Mihomo · Changing runtime"
       : root.runtimeRunning ? ("Mihomo · " + root.activeNodeName + " · " + root.runtimeBindAddress + ":" + root.runtimePort)

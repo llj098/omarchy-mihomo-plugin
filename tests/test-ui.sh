@@ -28,7 +28,7 @@ fi
 jq -e '
   .schemaVersion == 1
   and .id == "fatlj.mihomo"
-  and .version == "0.8.1"
+  and .version == "0.8.2"
   and (.kinds | index("bar-widget") != null)
   and .entryPoints.barWidget == "Panel.qml"
   and .barWidget.defaultSection == "right"
@@ -147,7 +147,8 @@ grep -Fq 'RuntimeInfoLabel { text: "Uploaded" }' "$PANEL" || fail "Mihomo upload
 grep -Fq 'RuntimeInfoLabel { text: "Connections" }' "$PANEL" || fail "Mihomo connection count is missing"
 grep -Fq 'RuntimeInfoLabel { text: "Latency" }' "$PANEL" || fail "Mihomo node latency is missing"
 grep -Fq 'component RuntimeInfoValue: Text' "$PANEL" || fail "Mihomo details do not use the Network-style value layout"
-grep -Fq 'dimmed: !(root.runtimeRunning || root.runtimeBusy || root.subscriptionBusy || root.bootstrapBusy)' "$PANEL" || fail "bar icon does not dim while inactive"
+grep -Fq 'font.weight: root.runtimeRunning ? Font.Black : Font.Normal' "$PANEL" || fail "running Mihomo does not use a heavier M glyph"
+grep -Fq 'dimmed: root.runtimeStatusLoaded' "$PANEL" || fail "unknown runtime state is incorrectly dimmed"
 grep -Fq 'active: false' "$PANEL" || fail "bar icon uses the red active treatment"
 grep -Fq 'implicitWidth: button.implicitWidth' "$PANEL" || fail "bar widget does not publish its button width"
 grep -Fq 'implicitHeight: button.implicitHeight' "$PANEL" || fail "bar widget does not publish its button height"
