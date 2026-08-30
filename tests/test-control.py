@@ -6,6 +6,7 @@ import socket
 import stat
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parent.parent
 SPEC = importlib.util.spec_from_file_location("mihomo_control", ROOT / "subscription/control.py")
@@ -73,6 +74,19 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as occupied_socket:
     occupied_port = occupied_socket.getsockname()[1]
     assert control.port_is_available(occupied_port) is False
 assert control.port_is_available(occupied_port) is True
+
+captured_commands = []
+original_run = control.run
+try:
+    control.run = lambda command, check=True: captured_commands.append(command) or SimpleNamespace(
+        returncode=0, stdout="", stderr=""
+    )
+    control.start_service(Path("/usr/bin/mihomo"), Path("/tmp/fatlj-runtime"))
+finally:
+    control.run = original_run
+assert captured_commands[0][-2:] == [
+    "-ext-ctl-unix", "/tmp/fatlj-runtime/controller.sock"
+]
 
 for invalid_settings in (
     {"port": 1023, "allowLan": False},
@@ -231,4 +245,4 @@ with tempfile.TemporaryDirectory() as temporary:
             else:
                 os.environ[key] = value
 
-print("control_tests=ok settings_persistence=1 port_7890=1 occupied_port_guard=1 apply_rollback=1 traversal_rejected=1")
+print("control_tests=ok settings_persistence=1 unix_controller=1 port_7890=1 occupied_port_guard=1 apply_rollback=1 traversal_rejected=1")

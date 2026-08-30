@@ -265,6 +265,8 @@ def start_service(binary: Path, runtime_dir: Path):
             str(runtime_dir),
             "-f",
             str(runtime_dir / "config.yaml"),
+            "-ext-ctl-unix",
+            str(runtime_dir / "controller.sock"),
         ],
         check=False,
     )
