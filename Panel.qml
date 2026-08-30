@@ -365,6 +365,8 @@ Panel {
 
   onBootstrapAvailableChanged: if (!bootstrapAvailable) cursorActive = false
 
+  Component.onCompleted: refreshRuntime(false)
+
   Process {
     id: statusProc
     command: [root.statusScript]
