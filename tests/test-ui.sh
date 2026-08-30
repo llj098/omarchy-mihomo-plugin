@@ -28,7 +28,7 @@ fi
 jq -e '
   .schemaVersion == 1
   and .id == "fatlj.mihomo"
-  and .version == "0.8.2"
+  and .version == "0.8.3"
   and (.kinds | index("bar-widget") != null)
   and .entryPoints.barWidget == "Panel.qml"
   and .barWidget.defaultSection == "right"
@@ -93,13 +93,17 @@ if grep -Fq 'draftRuntimePort !== 7890' "$PANEL" || grep -Fq 'reserved for Clash
   fail "port 7890 is still reserved"
 fi
 grep -Fq 'id: runtimePortInput' "$PANEL" || fail "runtime port text input is missing"
+grep -Fq 'property string draftRuntimePortText: ""' "$PANEL" || fail "runtime port flashes the default before status loads"
+grep -Fq 'readonly property bool settingsDirty: settingsLoaded' "$PANEL" || fail "Apply can appear before settings load"
+grep -Fq 'enabled: root.settingsLoaded && !root.runtimeBusy' "$PANEL" || fail "runtime controls are active before settings load"
+grep -Fq 'placeholderText: "--"' "$PANEL" || fail "unloaded runtime port has no neutral placeholder"
 grep -Fq 'anchors.horizontalCenter: parent.horizontalCenter' "$PANEL" || fail "runtime controls are not grouped like Omarchy compact settings"
 grep -Fq 'text: "PORT"' "$PANEL" || fail "runtime port label does not follow Omarchy compact-label styling"
 grep -Fq 'text: "ALLOW LAN"' "$PANEL" || fail "Allow LAN label does not follow Omarchy compact-label styling"
 grep -Fq 'portFontMetrics.advanceWidth("00000")' "$PANEL" || fail "runtime port field is not sized for five digits"
 grep -Fq 'maximumLength: 5' "$PANEL" || fail "runtime port field does not enforce five-character input"
 grep -Fq 'onTextEdited: root.draftRuntimePortText = text' "$PANEL" || fail "runtime port draft does not update while typing"
-grep -Fq 'readonly property bool settingsDirty: draftRuntimePortText !== String(savedRuntimePort)' "$PANEL" || fail "Apply visibility does not follow typed text immediately"
+grep -Fq 'draftRuntimePortText !== String(savedRuntimePort)' "$PANEL" || fail "Apply visibility does not follow typed text immediately"
 grep -Fq 'id: allowLanControl' "$PANEL" || fail "port and Allow LAN are not in one config row"
 grep -Fq 'checked: root.draftAllowLan' "$PANEL" || fail "Allow LAN draft toggle is not wired"
 grep -Fq 'command: [root.subscriptionControlScript, "apply"]' "$PANEL" || fail "Apply is not wired to runtime control"
@@ -156,4 +160,4 @@ if grep -Eq '#[[:xdigit:]]{3,8}|font\.pixelSize:[[:space:]]*[0-9]|spacing:[[:spa
   fail "panel contains hard-coded visual tokens"
 fi
 
-echo "ui_tests=ok on_demand_polling=1 no_background_load=1 runtime_statistics=1 main_controller_latency=1 network_style_grid=1 runtime_settings=1 port_7890=1 inline_config=1 immediate_apply=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"
+echo "ui_tests=ok no_default_port_flash=1 on_demand_polling=1 no_background_load=1 runtime_statistics=1 main_controller_latency=1 network_style_grid=1 runtime_settings=1 port_7890=1 inline_config=1 immediate_apply=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"

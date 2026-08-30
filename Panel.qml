@@ -57,7 +57,7 @@ Panel {
   property bool settingsLoaded: false
   property int savedRuntimePort: 7891
   property bool savedAllowLan: false
-  property string draftRuntimePortText: "7891"
+  property string draftRuntimePortText: ""
   readonly property int draftRuntimePort: Number(draftRuntimePortText)
   property bool draftAllowLan: false
   property string settingsError: ""
@@ -82,10 +82,10 @@ Panel {
   readonly property bool bootstrapBusy: bootstrapProc.running
   readonly property bool subscriptionBusy: subscriptionImportProc.running
   readonly property bool runtimeBusy: nodeStartProc.running || nodeStopProc.running || settingsApplyProc.running
-  readonly property bool settingsValid: /^[0-9]+$/.test(draftRuntimePortText)
+  readonly property bool settingsValid: settingsLoaded && /^[0-9]+$/.test(draftRuntimePortText)
     && draftRuntimePort >= 1024 && draftRuntimePort <= 65535
-  readonly property bool settingsDirty: draftRuntimePortText !== String(savedRuntimePort)
-    || draftAllowLan !== savedAllowLan
+  readonly property bool settingsDirty: settingsLoaded
+    && (draftRuntimePortText !== String(savedRuntimePort) || draftAllowLan !== savedAllowLan)
   readonly property string subscriptionFailure: subscriptionError !== "" ? subscriptionError : subscriptionStatusError
 
   function refreshStatus() {
@@ -1217,7 +1217,9 @@ Panel {
                 + leftPadding + rightPadding
               width: compactWidth
               anchors.verticalCenter: parent.verticalCenter
+              enabled: root.settingsLoaded && !root.runtimeBusy
               text: root.draftRuntimePortText
+              placeholderText: "--"
               maximumLength: 5
               validator: IntValidator { bottom: 1024; top: 65535 }
               inputMethodHints: Qt.ImhDigitsOnly
@@ -1240,6 +1242,7 @@ Panel {
             ToggleSwitch {
               id: allowLanControl
               anchors.verticalCenter: parent.verticalCenter
+              enabled: root.settingsLoaded && !root.runtimeBusy
               checked: root.draftAllowLan
               foreground: root.foreground
               onToggled: root.draftAllowLan = !root.draftAllowLan
