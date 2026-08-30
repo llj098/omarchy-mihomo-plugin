@@ -28,7 +28,7 @@ fi
 jq -e '
   .schemaVersion == 1
   and .id == "fatlj.mihomo"
-  and .version == "0.7.0"
+  and .version == "0.7.1"
   and (.kinds | index("bar-widget") != null)
   and .entryPoints.barWidget == "Panel.qml"
   and .barWidget.defaultSection == "right"
@@ -90,10 +90,16 @@ assert [text.index(marker) for marker in markers] == sorted(text.index(marker) f
 PY
 grep -Fq 'from: 1024' "$PANEL" || fail "runtime port minimum is not wired"
 grep -Fq 'to: 65535' "$PANEL" || fail "runtime port maximum is not wired"
-grep -Fq 'draftRuntimePort !== 7890' "$PANEL" || fail "Clash Verge port is not reserved"
+if grep -Fq 'draftRuntimePort !== 7890' "$PANEL" || grep -Fq 'reserved for Clash Verge' "$PANEL"; then
+  fail "port 7890 is still reserved"
+fi
+grep -Fq 'fieldWidth: Style.spacing.numberFieldWidth' "$PANEL" || fail "runtime port field does not use the compact official width"
+if grep -Fq 'width: parent.width - allowLanControl.width' "$PANEL"; then fail "runtime port field still fills the config row"; fi
 grep -Fq 'id: allowLanControl' "$PANEL" || fail "port and Allow LAN are not in one config row"
 grep -Fq 'checked: root.draftAllowLan' "$PANEL" || fail "Allow LAN draft toggle is not wired"
 grep -Fq 'command: [root.subscriptionControlScript, "apply"]' "$PANEL" || fail "Apply is not wired to runtime control"
+grep -Fq 'root.draftRuntimePort = previousPort' "$PANEL" || fail "failed Apply does not restore the previous port in the UI"
+grep -Fq 'root.draftAllowLan = previousAllowLan' "$PANEL" || fail "failed Apply does not restore the previous Allow LAN value in the UI"
 grep -Fq 'visible: root.savedAllowLan' "$PANEL" || fail "UFW review is not always shown for applied Allow LAN"
 grep -Fq 'command: [root.ufwScript, "launch", String(root.savedRuntimePort)]' "$PANEL" || fail "UFW review does not use the floating-terminal helper"
 grep -Fq 'text: root.subscriptionCount > 0 ? ("SUBSCRIPTIONS · " + root.subscriptionCount) : "SUBSCRIPTIONS"' "$PANEL" || fail "subscription section is missing"
@@ -130,4 +136,4 @@ if grep -Eq '#[[:xdigit:]]{3,8}|font\.pixelSize:[[:space:]]*[0-9]|spacing:[[:spa
   fail "panel contains hard-coded visual tokens"
 fi
 
-echo "ui_tests=ok missing_state=1 ready_state=1 runtime_settings=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"
+echo "ui_tests=ok missing_state=1 ready_state=1 runtime_settings=1 port_7890=1 compact_port_field=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"

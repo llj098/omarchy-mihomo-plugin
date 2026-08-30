@@ -69,7 +69,7 @@ Panel {
   readonly property bool subscriptionBusy: subscriptionImportProc.running
   readonly property bool runtimeBusy: nodeStartProc.running || nodeStopProc.running || settingsApplyProc.running
   readonly property bool settingsValid: draftRuntimePort === Math.floor(draftRuntimePort)
-    && draftRuntimePort >= 1024 && draftRuntimePort <= 65535 && draftRuntimePort !== 7890
+    && draftRuntimePort >= 1024 && draftRuntimePort <= 65535
   readonly property bool settingsDirty: draftRuntimePort !== savedRuntimePort
     || draftAllowLan !== savedAllowLan
   readonly property string subscriptionFailure: subscriptionError !== "" ? subscriptionError : subscriptionStatusError
@@ -167,6 +167,8 @@ Panel {
     if (runtimeBusy || !settingsValid || !settingsDirty) return
     settingsError = ""
     settingsMessage = "Applying runtime settings"
+    settingsApplyProc.previousPort = savedRuntimePort
+    settingsApplyProc.previousAllowLan = savedAllowLan
     settingsApplyProc.pendingRequest = JSON.stringify({
       port: draftRuntimePort,
       allowLan: draftAllowLan
@@ -426,6 +428,8 @@ Panel {
   Process {
     id: settingsApplyProc
     property string pendingRequest: ""
+    property int previousPort: 7891
+    property bool previousAllowLan: false
     command: [root.subscriptionControlScript, "apply"]
     stdinEnabled: true
     stdout: StdioCollector {
@@ -453,6 +457,10 @@ Panel {
           root.settingsError = "Settings were applied but their status could not be read"
         }
       } else {
+        root.savedRuntimePort = previousPort
+        root.savedAllowLan = previousAllowLan
+        root.draftRuntimePort = previousPort
+        root.draftAllowLan = previousAllowLan
         root.settingsMessage = ""
         root.settingsError = String(settingsApplyStderr.text || "Could not apply runtime settings").trim()
       }
@@ -1056,8 +1064,7 @@ Panel {
 
             NumberField {
               id: runtimePortField
-              width: parent.width - allowLanControl.width - parent.spacing
-              fieldWidth: width
+              fieldWidth: Style.spacing.numberFieldWidth
               label: "Mixed port"
               from: 1024
               to: 65535
@@ -1084,15 +1091,6 @@ Panel {
                 onToggled: root.draftAllowLan = !root.draftAllowLan
               }
             }
-          }
-
-          Text {
-            visible: root.draftRuntimePort === 7890
-            width: parent.width
-            text: "Port 7890 is reserved for Clash Verge."
-            color: root.urgent
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
           }
 
           Button {

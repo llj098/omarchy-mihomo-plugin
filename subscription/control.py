@@ -21,7 +21,6 @@ UNIT = "fatlj-mihomo.service"
 DEFAULT_PORT = 7891
 MIN_PORT = 1024
 MAX_PORT = 65535
-CLASH_VERGE_PORT = 7890
 DEFAULT_SETTINGS = {"port": DEFAULT_PORT, "allowLan": False}
 MAX_CONFIG_BYTES = 8 * 1024 * 1024
 MAX_YAML_ALIASES = 100
@@ -62,8 +61,6 @@ def validate_settings(value):
     allow_lan = value.get("allowLan")
     if isinstance(port, bool) or not isinstance(port, int) or not MIN_PORT <= port <= MAX_PORT:
         raise ControlError(f"Port must be an integer from {MIN_PORT} to {MAX_PORT}")
-    if port == CLASH_VERGE_PORT:
-        raise ControlError(f"Port {CLASH_VERGE_PORT} is reserved for Clash Verge")
     if not isinstance(allow_lan, bool):
         raise ControlError("Allow LAN must be true or false")
     return {"port": port, "allowLan": allow_lan}
@@ -127,6 +124,16 @@ def port_is_open(port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(0.1)
         return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
+def port_is_available(port: int, allow_lan: bool = False):
+    address = "0.0.0.0" if allow_lan else "127.0.0.1"
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind((address, port))
+        except OSError:
+            return False
+    return True
 
 
 def subscription_config(data_dir: Path, subscription_id: str) -> Path:
@@ -325,8 +332,8 @@ def start(request=None):
             raise ControlError("Mihomo rejected the selected-node runtime configuration")
 
         stop_service()
-        if port_is_open(port):
-            raise ControlError(f"127.0.0.1:{port} is already in use")
+        if not port_is_available(port, allow_lan):
+            raise ControlError(f"Port {port} is already in use")
         os.replace(prepared_config, runtime_dir / "config.yaml")
 
     os.chmod(runtime_dir / "config.yaml", 0o600)
@@ -399,6 +406,7 @@ def status():
 def apply_settings():
     request = validate_settings(read_request("Invalid runtime settings request"))
     _, state_root = paths()
+    previous_settings = load_settings(state_root)
     properties = unit_properties()
     running = properties["ActiveState"] == "active" and int(properties.get("MainPID", "0") or 0) > 0
     selection = read_selection(state_root) if running else {}
@@ -410,12 +418,54 @@ def apply_settings():
     ):
         raise ControlError("Active Mihomo runtime selection is unavailable")
 
+    rollback_settings = previous_settings
+    if running:
+        try:
+            rollback_settings = validate_settings({
+                "port": selection.get("port"),
+                "allowLan": selection.get("allowLan"),
+            })
+        except ControlError:
+            rollback_settings = previous_settings
+
+    target_is_current_runtime = running and request["port"] == rollback_settings["port"]
+    if not target_is_current_runtime and not port_is_available(request["port"], request["allowLan"]):
+        if running:
+            raise ControlError(
+                f"Port {request['port']} is already in use. "
+                f"Mihomo is still running on port {rollback_settings['port']}; previous settings were kept"
+            )
+        raise ControlError(f"Port {request['port']} is already in use; previous settings were kept")
+
     atomic_json(state_root / "settings.json", request)
     if running:
-        result = start({
+        selection_request = {
             "subscriptionId": selection["subscriptionId"],
             "nodeName": selection["nodeName"],
-        })
+        }
+        try:
+            result = start(selection_request)
+        except ControlError as apply_error:
+            atomic_json(state_root / "settings.json", rollback_settings)
+            current = unit_properties()
+            old_runtime_survived = (
+                current["ActiveState"] == "active"
+                and int(current.get("MainPID", "0") or 0) > 0
+                and port_is_open(rollback_settings["port"])
+            )
+            if not old_runtime_survived:
+                try:
+                    start(selection_request)
+                except ControlError as rollback_error:
+                    raise ControlError(
+                        f"Could not apply runtime settings: {apply_error}. Previous port "
+                        f"{rollback_settings['port']} was restored in settings, but Mihomo could not "
+                        f"be restarted: {rollback_error}"
+                    ) from apply_error
+            raise ControlError(
+                f"Could not apply runtime settings: {apply_error}. Previous settings were restored; "
+                f"Mihomo is running on port {rollback_settings['port']}"
+            ) from apply_error
         result["restarted"] = True
         result["settings"] = request
         return result
