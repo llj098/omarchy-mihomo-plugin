@@ -28,7 +28,7 @@ fi
 jq -e '
   .schemaVersion == 1
   and .id == "fatlj.mihomo"
-  and .version == "0.9.0"
+  and .version == "0.9.1"
   and (.kinds | index("bar-widget") != null)
   and .entryPoints.barWidget == "Panel.qml"
   and .barWidget.defaultSection == "right"
@@ -154,6 +154,9 @@ grep -Fq 'command: [root.subscriptionControlScript, "latency"]' "$PANEL" || fail
 grep -Fq 'refreshRuntimeLatency()' "$PANEL" || fail "active-node latency is not sampled when the panel opens"
 grep -Fq 'root.runtimeNodeLatencyMs > 1000' "$PANEL" || fail "slow active nodes do not trigger recommendations"
 grep -Fq 'if (root.runtimeRunning) {' "$PANEL" || fail "unresponsive active nodes do not trigger recommendations"
+grep -Fq 'root.clearRecommendations()' "$PANEL" || fail "healthy active nodes do not clear recommendations"
+grep -Fq 'recommendProc.running = false' "$PANEL" || fail "healthy active nodes do not stop recommendation testing"
+grep -Fq 'property bool cancelled: false' "$PANEL" || fail "cancelled recommendation tests can publish stale results"
 grep -Fq 'pendingRequest = JSON.stringify({mode: "recommend"})' "$PANEL" || fail "recommendation background test is not wired"
 grep -Fq 'text: "RECOMMEND"' "$PANEL" || fail "recommendation section is missing"
 grep -Fq 'model: recommendSubscription.recommendation.top || []' "$PANEL" || fail "per-subscription recommendation Top 3 is not rendered"
@@ -172,4 +175,4 @@ if grep -Eq '#[[:xdigit:]]{3,8}|font\.pixelSize:[[:space:]]*[0-9]|spacing:[[:spa
   fail "panel contains hard-coded visual tokens"
 fi
 
-echo "ui_tests=ok recommend_top3=1 shared_proxy_row=1 bounded_recommend_scroll=1 active_node_latency_on_open=1 one_shot_basic_status=1 no_closed_panel_polling=1 no_default_port_flash=1 on_demand_details=1 runtime_statistics=1 main_controller_latency=1 network_style_grid=1 runtime_settings=1 port_7890=1 inline_config=1 immediate_apply=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"
+echo "ui_tests=ok healthy_node_cancels_recommend=1 recommend_top3=1 shared_proxy_row=1 bounded_recommend_scroll=1 active_node_latency_on_open=1 one_shot_basic_status=1 no_closed_panel_polling=1 no_default_port_flash=1 on_demand_details=1 runtime_statistics=1 main_controller_latency=1 network_style_grid=1 runtime_settings=1 port_7890=1 inline_config=1 immediate_apply=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"

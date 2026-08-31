@@ -133,6 +133,7 @@ Panel {
       var parsed = JSON.parse(String(raw || "{}"))
       runtimeRunning = parsed.running === true
       runtimeStatusLoaded = true
+      if (!runtimeRunning) clearRecommendations()
       activeSubscriptionId = String(parsed.subscriptionId || "")
       activeNodeName = String(parsed.nodeName || "")
       activeNodeType = String(parsed.nodeType || "")
@@ -316,8 +317,18 @@ Panel {
   function startRecommendations() {
     if (recommendProc.running) return
     recommendError = ""
+    recommendProc.cancelled = false
     recommendProc.pendingRequest = JSON.stringify({mode: "recommend"})
     recommendProc.running = true
+  }
+
+  function clearRecommendations() {
+    recommendations = []
+    recommendError = ""
+    if (recommendProc.running) {
+      recommendProc.cancelled = true
+      recommendProc.running = false
+    }
   }
 
   function subscriptionLabel(subscriptionId) {
@@ -507,7 +518,10 @@ Panel {
         var result = JSON.parse(String(runtimeLatencyStdout.text || "{}"))
         root.runtimeNodeLatencyMs = Number(result.delayMs || 0)
         if (root.runtimeNodeLatencyMs > 0) root.runtimeNodeAlive = true
-        if (root.runtimeNodeLatencyMs > 1000) root.startRecommendations()
+        if (root.runtimeNodeLatencyMs > 1000)
+          root.startRecommendations()
+        else
+          root.clearRecommendations()
       } catch (error) {
       }
     }
@@ -661,6 +675,7 @@ Panel {
   Process {
     id: recommendProc
     property string pendingRequest: ""
+    property bool cancelled: false
     command: [root.latencyScript]
     stdinEnabled: true
     stdout: StdioCollector { id: recommendStdout; waitForEnd: true }
@@ -670,6 +685,10 @@ Panel {
       pendingRequest = ""
     }
     onExited: function(exitCode) {
+      if (cancelled) {
+        cancelled = false
+        return
+      }
       if (exitCode === 0) {
         try {
           var result = JSON.parse(String(recommendStdout.text || "{}"))
