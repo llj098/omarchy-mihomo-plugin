@@ -4,7 +4,7 @@ This is a native Omarchy bar panel backed by a pure Bash bootstrap for installin
 
 The panel deliberately reuses Omarchy's own `Panel`, `BarIconButton`, `KeyboardPanel`, `PanelHero`, `CursorSurface`, `Button`, spacing, font, border, and color tokens. It does not copy or approximate the system theme. When `mihomo` is absent, the panel shows a **Bootstrap** button that opens the reviewed installation flow in Omarchy's floating terminal. An installed system shows the binary, package, and GeoIP state instead.
 
-The panel also provides narrowly scoped runtime settings for the plugin-owned Mihomo service; it does not manage desktop proxy settings.
+The panel also provides narrowly scoped runtime settings for the plugin-owned Mihomo service; it does not manage desktop proxy settings. Its bottom **Plugin** section displays the installed plugin version.
 
 ## Plugin UI
 

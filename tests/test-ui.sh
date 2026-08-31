@@ -28,7 +28,7 @@ fi
 jq -e '
   .schemaVersion == 1
   and .id == "fatlj.mihomo"
-  and .version == "0.9.5"
+  and .version == "0.9.6"
   and (.kinds | index("bar-widget") != null)
   and .entryPoints.barWidget == "Panel.qml"
   and .barWidget.defaultSection == "right"
@@ -80,12 +80,15 @@ grep -Fq 'command: [root.subscriptionStatusScript]' "$PANEL" || fail "subscripti
 grep -Fq 'stdinEnabled: true' "$PANEL" || fail "subscription source is exposed through argv instead of stdin"
 [[ $(grep -c 'PanelSeparator {' "$PANEL") -ge 3 ]] || fail "installation, settings, and subscriptions are not visibly separated"
 grep -Fq 'text: "CONFIG"' "$PANEL" || fail "config section is missing"
+grep -Fq 'readonly property string pluginVersion: "0.9.6"' "$PANEL" || fail "panel plugin version does not match the manifest"
+grep -Fq 'text: "PLUGIN"' "$PANEL" || fail "plugin version section is missing"
+grep -Fq 'value: root.pluginVersion' "$PANEL" || fail "plugin version value is not rendered"
 grep -Fq 'meta: root.mihomoInstalled ? root.packageVersion : ""' "$PANEL" || fail "Mihomo version is not under the title"
 if grep -Fq 'text: "INSTALLATION"' "$PANEL"; then fail "installation section is still rendered"; fi
 python3 - "$PANEL" <<'PY'
 import pathlib, sys
 text = pathlib.Path(sys.argv[1]).read_text()
-markers = ['("SUBSCRIPTIONS · " + root.subscriptionCount)', 'text: "CONFIG"', 'text: "BOOTSTRAP"']
+markers = ['("SUBSCRIPTIONS · " + root.subscriptionCount)', 'text: "CONFIG"', 'text: "BOOTSTRAP"', 'text: "PLUGIN"']
 assert [text.index(marker) for marker in markers] == sorted(text.index(marker) for marker in markers)
 PY
 grep -Fq 'validator: IntValidator { bottom: 1024; top: 65535 }' "$PANEL" || fail "runtime port range is not wired"
@@ -180,4 +183,4 @@ fi
 
 grep -Fq 'preexec_fn=set_parent_death_signal' "$LATENCY_HELPER" || fail "temporary Mihomo can survive a killed recommendation helper"
 
-echo "ui_tests=ok official_truncated_node_tooltip=1 null_connections_zero=1 parent_death_cleanup=1 healthy_node_cancels_recommend=1 recommend_top3=1 shared_proxy_row=1 bounded_recommend_scroll=1 active_node_latency_on_open=1 one_shot_basic_status=1 no_closed_panel_polling=1 no_default_port_flash=1 on_demand_details=1 runtime_statistics=1 main_controller_latency=1 network_style_grid=1 runtime_settings=1 port_7890=1 inline_config=1 immediate_apply=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"
+echo "ui_tests=ok bottom_plugin_version=1 official_truncated_node_tooltip=1 null_connections_zero=1 parent_death_cleanup=1 healthy_node_cancels_recommend=1 recommend_top3=1 shared_proxy_row=1 bounded_recommend_scroll=1 active_node_latency_on_open=1 one_shot_basic_status=1 no_closed_panel_polling=1 no_default_port_flash=1 on_demand_details=1 runtime_statistics=1 main_controller_latency=1 network_style_grid=1 runtime_settings=1 port_7890=1 inline_config=1 immediate_apply=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"
