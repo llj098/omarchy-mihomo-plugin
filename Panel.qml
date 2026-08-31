@@ -798,6 +798,13 @@ Panel {
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.bodySmall
                   elide: Text.ElideLeft
+
+                  HoverHandler { id: nodeNameHover }
+                  PanelToolTip {
+                    visible: nodeNameText.truncated && nodeNameHover.hovered
+                    text: root.activeNodeName
+                    fontFamily: root.fontFamily
+                  }
                 }
 
                 Text {

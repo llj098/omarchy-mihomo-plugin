@@ -28,7 +28,7 @@ fi
 jq -e '
   .schemaVersion == 1
   and .id == "fatlj.mihomo"
-  and .version == "0.9.2"
+  and .version == "0.9.3"
   and (.kinds | index("bar-widget") != null)
   and .entryPoints.barWidget == "Panel.qml"
   and .barWidget.defaultSection == "right"
@@ -135,6 +135,8 @@ grep -Fq 'checked: root.runtimeRunning' "$PANEL" || fail "runtime stop switch is
 grep -Fq 'onToggled: root.toggleRuntime()' "$PANEL" || fail "runtime start-stop switch is not wired"
 grep -Fq 'startNode(activeSubscriptionId, activeNodeName)' "$PANEL" || fail "runtime switch does not restart the saved node"
 grep -Fq 'text: root.activeNodeName' "$PANEL" || fail "active node is not shown in the hero"
+grep -Fq 'visible: nodeNameText.truncated && nodeNameHover.hovered' "$PANEL" || fail "truncated active nodes do not use a hover tooltip"
+grep -Fq 'PanelToolTip {' "$PANEL" || fail "active-node tooltip does not use Omarchy's official component"
 grep -Fq 'color: root.foreground' "$PANEL" || fail "hero node does not use the official foreground color"
 grep -Fq 'iconText: "󰓅"' "$PANEL" || fail "latency action does not use the official network meter icon"
 grep -Fq ': "Speed Test"' "$PANEL" || fail "latency action tooltip is missing"
@@ -177,4 +179,4 @@ fi
 
 grep -Fq 'preexec_fn=set_parent_death_signal' "$LATENCY_HELPER" || fail "temporary Mihomo can survive a killed recommendation helper"
 
-echo "ui_tests=ok parent_death_cleanup=1 healthy_node_cancels_recommend=1 recommend_top3=1 shared_proxy_row=1 bounded_recommend_scroll=1 active_node_latency_on_open=1 one_shot_basic_status=1 no_closed_panel_polling=1 no_default_port_flash=1 on_demand_details=1 runtime_statistics=1 main_controller_latency=1 network_style_grid=1 runtime_settings=1 port_7890=1 inline_config=1 immediate_apply=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"
+echo "ui_tests=ok official_truncated_node_tooltip=1 null_connections_zero=1 parent_death_cleanup=1 healthy_node_cancels_recommend=1 recommend_top3=1 shared_proxy_row=1 bounded_recommend_scroll=1 active_node_latency_on_open=1 one_shot_basic_status=1 no_closed_panel_polling=1 no_default_port_flash=1 on_demand_details=1 runtime_statistics=1 main_controller_latency=1 network_style_grid=1 runtime_settings=1 port_7890=1 inline_config=1 immediate_apply=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"

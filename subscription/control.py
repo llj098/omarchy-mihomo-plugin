@@ -426,7 +426,9 @@ def controller_statistics(state_root: Path, node_name: str, running: bool):
     try:
         connections = controller_json(socket_path, "/connections")
         items = connections.get("connections")
-        if not isinstance(items, list):
+        if items is None:
+            items = []
+        elif not isinstance(items, list):
             raise ControlError("Mihomo connection statistics are unavailable")
         result = {
             "available": True,

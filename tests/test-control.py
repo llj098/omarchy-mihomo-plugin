@@ -109,6 +109,22 @@ try:
         "nodeAlive": True,
         "nodeLatencyMs": 45,
     }
+    control.controller_json = lambda _socket, endpoint: {
+        "/connections": {
+            "downloadTotal": 4096,
+            "uploadTotal": 3072,
+            "connections": None,
+        },
+        "/proxies/Node%20A": {"alive": True, "history": []},
+    }[endpoint]
+    assert control.controller_statistics(Path("/tmp/state"), "Node A", True) == {
+        "available": True,
+        "downloadTotal": 4096,
+        "uploadTotal": 3072,
+        "activeConnections": 0,
+        "nodeAlive": True,
+        "nodeLatencyMs": None,
+    }
 finally:
     control.controller_json = original_controller_json
 assert control.controller_statistics(Path("/tmp/state"), "Node A", False) == {"available": False}
@@ -296,4 +312,4 @@ with tempfile.TemporaryDirectory() as temporary:
             else:
                 os.environ[key] = value
 
-print("control_tests=ok settings_persistence=1 unix_controller=1 controller_statistics=1 active_node_latency=1 port_7890=1 occupied_port_guard=1 apply_rollback=1 traversal_rejected=1")
+print("control_tests=ok settings_persistence=1 unix_controller=1 null_connections=zero controller_statistics=1 active_node_latency=1 port_7890=1 occupied_port_guard=1 apply_rollback=1 traversal_rejected=1")
