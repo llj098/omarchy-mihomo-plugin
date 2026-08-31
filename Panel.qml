@@ -801,7 +801,7 @@ Panel {
 
                   HoverHandler { id: nodeNameHover }
                   PanelToolTip {
-                    visible: nodeNameText.truncated && nodeNameHover.hovered
+                    visible: nodeNameText.implicitWidth > nodeNameText.width && nodeNameHover.hovered
                     text: root.activeNodeName
                     fontFamily: root.fontFamily
                   }
