@@ -67,6 +67,8 @@ Panel {
   property var latencyResults: ({})
   property string latencyBusyKey: ""
   property string latencyError: ""
+  property var recommendations: []
+  property string recommendError: ""
   property string runtimeError: ""
   property string runtimeMessage: ""
   property string subscriptionError: ""
@@ -311,6 +313,20 @@ Panel {
     latencyProc.running = true
   }
 
+  function startRecommendations() {
+    if (recommendProc.running) return
+    recommendError = ""
+    recommendProc.pendingRequest = JSON.stringify({mode: "recommend"})
+    recommendProc.running = true
+  }
+
+  function subscriptionLabel(subscriptionId) {
+    for (var i = 0; i < subscriptions.length; i++) {
+      if (subscriptions[i].id === subscriptionId) return subscriptions[i].label
+    }
+    return subscriptionId
+  }
+
   function formatBytes(bytes) {
     var value = Number(bytes)
     if (!isFinite(value) || value < 0) value = 0
@@ -480,11 +496,18 @@ Panel {
       waitForEnd: true
     }
     onExited: function(exitCode) {
-      if (exitCode !== 0) return
+      if (exitCode !== 0) {
+        if (root.runtimeRunning) {
+          root.runtimeNodeAlive = false
+          root.startRecommendations()
+        }
+        return
+      }
       try {
         var result = JSON.parse(String(runtimeLatencyStdout.text || "{}"))
         root.runtimeNodeLatencyMs = Number(result.delayMs || 0)
         if (root.runtimeNodeLatencyMs > 0) root.runtimeNodeAlive = true
+        if (root.runtimeNodeLatencyMs > 1000) root.startRecommendations()
       } catch (error) {
       }
     }
@@ -632,6 +655,32 @@ Panel {
         root.latencyError = String(latencyStderr.text || "Latency test failed").trim()
       }
       root.latencyBusyKey = ""
+    }
+  }
+
+  Process {
+    id: recommendProc
+    property string pendingRequest: ""
+    command: [root.latencyScript]
+    stdinEnabled: true
+    stdout: StdioCollector { id: recommendStdout; waitForEnd: true }
+    stderr: StdioCollector { id: recommendStderr; waitForEnd: true }
+    onStarted: {
+      write(pendingRequest + "\n")
+      pendingRequest = ""
+    }
+    onExited: function(exitCode) {
+      if (exitCode === 0) {
+        try {
+          var result = JSON.parse(String(recommendStdout.text || "{}"))
+          root.recommendations = Array.isArray(result.subscriptions) ? result.subscriptions : []
+          root.recommendError = ""
+        } catch (error) {
+          root.recommendError = "Recommendation result could not be read"
+        }
+      } else {
+        root.recommendError = String(recommendStderr.text || "Recommendation speed test failed").trim()
+      }
     }
   }
 
@@ -787,6 +836,15 @@ Panel {
           font.pixelSize: Style.font.bodySmall
           wrapMode: Text.WordWrap
         }
+        Text {
+          visible: root.recommendError !== ""
+          width: parent.width
+          text: root.recommendError
+          color: root.urgent
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+          wrapMode: Text.WordWrap
+        }
 
         Column {
           visible: root.runtimeRunning
@@ -826,6 +884,90 @@ Panel {
             RuntimeInfoLabel { text: "Uploaded" }
             RuntimeInfoValue {
               text: root.runtimeStatsAvailable ? root.formatBytes(root.runtimeUploadTotal) : "--"
+            }
+          }
+        }
+
+        PanelSeparator {
+          visible: root.recommendations.length > 0
+          foreground: root.foreground
+        }
+        Column {
+          visible: root.recommendations.length > 0
+          width: parent.width
+          spacing: Style.space(10)
+
+          PanelSectionHeader {
+            text: "RECOMMEND"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+          }
+
+          Flickable {
+            id: recommendList
+            width: parent.width
+            height: Math.min(contentHeight, Style.space(180))
+            contentWidth: width
+            contentHeight: recommendColumn.implicitHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            interactive: contentHeight > height
+
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+            Column {
+              id: recommendColumn
+              width: recommendList.width
+              spacing: Style.space(10)
+
+              Repeater {
+                model: root.recommendations
+
+                delegate: Column {
+                  id: recommendSubscription
+                  required property var modelData
+                  required property int index
+                  readonly property var recommendation: modelData
+                  width: recommendColumn.width
+                  spacing: Style.space(4)
+
+                  PanelSeparator {
+                    visible: recommendSubscription.index > 0
+                    height: visible ? implicitHeight : 0
+                    foreground: root.foreground
+                  }
+
+                  PanelSectionHeader {
+                    text: root.subscriptionLabel(recommendSubscription.recommendation.subscriptionId)
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
+                    leftPadding: Style.space(6)
+                  }
+
+                  Repeater {
+                    model: recommendSubscription.recommendation.top || []
+
+                    delegate: ProxyNodeRow {
+                      required property var modelData
+                      width: recommendSubscription.width
+                      subscriptionId: recommendSubscription.recommendation.subscriptionId
+                      member: ({kind: "proxy", name: modelData.name, type: modelData.type})
+                      latency: modelData
+                    }
+                  }
+
+                  Text {
+                    visible: (recommendSubscription.recommendation.top || []).length === 0
+                    width: parent.width
+                    leftPadding: Style.space(22)
+                    text: String(recommendSubscription.recommendation.error || "No responsive nodes")
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    elide: Text.ElideRight
+                  }
+                }
+              }
             }
           }
         }
@@ -1030,48 +1172,13 @@ Panel {
                       Repeater {
                         model: groupList.expanded ? (groupList.group.members || []) : []
 
-                        delegate: CursorSurface {
-                          id: memberSurface
+                        delegate: ProxyNodeRow {
                           required property var modelData
-                          readonly property var member: modelData
-                          readonly property bool isProxy: member.kind === "proxy"
-                          readonly property var latency: root.nodeLatency(
-                            subscriptionList.subscription.id, groupList.group.name, member.name)
                           width: groupList.width
-                          height: memberPair.implicitHeight + Style.spacing.controlGap
-                          foreground: root.foreground
-                          hasCursor: memberSurface.isProxy && memberHover.hovered
-                          current: memberSurface.isProxy
-                            && root.runtimeRunning
-                            && root.activeSubscriptionId === subscriptionList.subscription.id
-                            && root.activeNodeName === memberSurface.member.name
-                          opacity: memberSurface.isProxy ? (root.runtimeBusy ? 0.6 : 1.0) : 0.65
-
-                          NodePair {
-                            id: memberPair
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.leftMargin: Style.space(22)
-                            anchors.rightMargin: Style.space(6)
-                            label: memberSurface.member.name
-                            value: {
-                              var parts = [memberSurface.member.type.toUpperCase()]
-                              if (memberSurface.current) parts.push("ACTIVE")
-                              if (memberSurface.latency) {
-                                parts.push(memberSurface.latency.status === "ok"
-                                  ? (memberSurface.latency.delayMs + " ms") : "TIMEOUT")
-                              }
-                              return parts.join(" · ")
-                            }
-                          }
-
-                          HoverHandler { id: memberHover }
-                          TapHandler {
-                            enabled: memberSurface.isProxy && !root.runtimeBusy
-                            onTapped: root.startNode(
-                              subscriptionList.subscription.id, memberSurface.member.name)
-                          }
+                          subscriptionId: subscriptionList.subscription.id
+                          member: modelData
+                          latency: root.nodeLatency(
+                            subscriptionList.subscription.id, groupList.group.name, modelData.name)
                         }
                       }
 
@@ -1380,6 +1487,48 @@ Panel {
     color: root.foreground
     font.family: root.fontFamily
     font.pixelSize: Style.font.bodySmall
+  }
+
+  component ProxyNodeRow: CursorSurface {
+    id: proxyNodeRow
+    property string subscriptionId: ""
+    property var member: ({})
+    property var latency: null
+    readonly property bool isProxy: member.kind === "proxy"
+
+    height: proxyNodePair.implicitHeight + Style.spacing.controlGap
+    foreground: root.foreground
+    hasCursor: isProxy && proxyNodeHover.hovered
+    current: isProxy
+      && root.runtimeRunning
+      && root.activeSubscriptionId === subscriptionId
+      && root.activeNodeName === member.name
+    opacity: isProxy ? (root.runtimeBusy ? 0.6 : 1.0) : 0.65
+
+    NodePair {
+      id: proxyNodePair
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      anchors.leftMargin: Style.space(22)
+      anchors.rightMargin: Style.space(6)
+      label: proxyNodeRow.member.name
+      value: {
+        var parts = [String(proxyNodeRow.member.type || "unknown").toUpperCase()]
+        if (proxyNodeRow.current) parts.push("ACTIVE")
+        if (proxyNodeRow.latency) {
+          parts.push(proxyNodeRow.latency.status === "ok"
+            ? (proxyNodeRow.latency.delayMs + " ms") : "TIMEOUT")
+        }
+        return parts.join(" · ")
+      }
+    }
+
+    HoverHandler { id: proxyNodeHover }
+    TapHandler {
+      enabled: proxyNodeRow.isProxy && !root.runtimeBusy
+      onTapped: root.startNode(proxyNodeRow.subscriptionId, proxyNodeRow.member.name)
+    }
   }
 
   component NodePair: Row {

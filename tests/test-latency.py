@@ -23,6 +23,11 @@ document = {
         {"name": "FINAL", "type": "select", "proxies": ["PROXY", "DIRECT"]},
     ],
 }
+assert latency.all_proxy_nodes(document) == [
+    {"name": "Node A", "type": "vless"},
+    {"name": "Node B", "type": "hysteria2"},
+    {"name": "Node C", "type": "trojan"},
+]
 assert latency.group_nodes(document, "PROXY") == ["Node A", "Node B"]
 assert latency.group_nodes(document, "UNGROUPED") == ["Node C"]
 try:
@@ -73,7 +78,45 @@ finally:
     latency.query_group = original_query_group
     latency.query_proxy = original_query_proxy
 
-assert not hasattr(latency, "subprocess")
-assert not hasattr(latency, "tempfile")
+prepared = latency.prepare_temporary_document(document, ["Node A", "Node B", "Node C"])
+assert prepared["proxy-groups"] == [{
+    "name": latency.TEST_GROUP,
+    "type": "select",
+    "proxies": ["Node A", "Node B", "Node C"],
+}]
+assert prepared["rules"] == ["MATCH,DIRECT"]
+assert prepared["allow-lan"] is False
+assert prepared["bind-address"] == "127.0.0.1"
+for removed in ("mixed-port", "proxy-providers", "rule-providers", "external-controller", "tun"):
+    assert removed not in prepared
 
-print("latency_tests=ok group_members=1 active_main_controller=1 native_group_api=1 no_temporary_mihomo=1")
+with tempfile.TemporaryDirectory() as temporary:
+    data_dir = Path(temporary)
+    first = data_dir / "first-sub"
+    second = data_dir / "second-sub"
+    first.mkdir()
+    second.mkdir()
+    (first / "config.yaml").write_text(
+        "proxies:\n"
+        "  - {name: Fast, type: vless, server: fast.invalid}\n"
+        "  - {name: Slow, type: trojan, server: slow.invalid}\n"
+        "  - {name: Mid, type: ss, server: mid.invalid}\n"
+        "  - {name: Faster, type: hysteria2, server: faster.invalid}\n",
+        encoding="utf-8",
+    )
+    (second / "config.yaml").write_text("proxies: []\n", encoding="utf-8")
+    original_temporary_delays = latency.temporary_delays
+    try:
+        latency.temporary_delays = lambda _document, _names, _url: {
+            "Fast": 20, "Slow": 90, "Mid": None, "Faster": 10
+        }
+        result = latency.recommend_all(data_dir, "https://test")
+    finally:
+        latency.temporary_delays = original_temporary_delays
+    by_id = {item["subscriptionId"]: item for item in result}
+    assert [item["name"] for item in by_id["first-sub"]["top"]] == ["Faster", "Fast", "Slow"]
+    assert by_id["first-sub"]["responsiveCount"] == 3
+    assert by_id["second-sub"]["top"] == []
+    assert "inline proxy" in by_id["second-sub"]["error"]
+
+print("latency_tests=ok group_members=1 active_main_controller=1 native_group_api=1 temporary_recommend_mihomo=1 top3_per_subscription=1")

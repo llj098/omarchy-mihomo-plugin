@@ -28,7 +28,7 @@ fi
 jq -e '
   .schemaVersion == 1
   and .id == "fatlj.mihomo"
-  and .version == "0.8.6"
+  and .version == "0.9.0"
   and (.kinds | index("bar-widget") != null)
   and .entryPoints.barWidget == "Panel.qml"
   and .barWidget.defaultSection == "right"
@@ -127,10 +127,10 @@ grep -Fq 'visible: groupList.group.directNodeCount > 0' "$PANEL" || fail "group 
 grep -Fq 'readonly property bool controllerAvailable: root.runtimeRunning' "$PANEL" || fail "latency action is not gated by the main Controller"
 grep -Fq 'enabled: controllerAvailable && !latencyProc.running' "$PANEL" || fail "latency action can run without the main Controller"
 grep -Fq 'onClicked: root.startLatency(' "$PANEL" || fail "group latency button is not clickable"
-grep -Fq 'memberSurface.latency.delayMs + " ms"' "$PANEL" || fail "node latency is not rendered beside the node"
+grep -Fq 'proxyNodeRow.latency.delayMs + " ms"' "$PANEL" || fail "node latency is not rendered beside the node"
 grep -Fq 'height: Math.min(contentHeight, Style.space(320))' "$PANEL" || fail "subscription node lists are not height-bounded"
 grep -Fq 'command: [root.subscriptionControlScript, "start"]' "$PANEL" || fail "node click is not connected to runtime control"
-grep -Fq 'subscriptionList.subscription.id, memberSurface.member.name)' "$PANEL" || fail "proxy member rows are not clickable"
+grep -Fq 'onTapped: root.startNode(proxyNodeRow.subscriptionId, proxyNodeRow.member.name)' "$PANEL" || fail "shared proxy rows are not clickable"
 grep -Fq 'checked: root.runtimeRunning' "$PANEL" || fail "runtime stop switch is missing"
 grep -Fq 'onToggled: root.toggleRuntime()' "$PANEL" || fail "runtime start-stop switch is not wired"
 grep -Fq 'startNode(activeSubscriptionId, activeNodeName)' "$PANEL" || fail "runtime switch does not restart the saved node"
@@ -152,6 +152,15 @@ grep -Fq 'RuntimeInfoLabel { text: "Connections" }' "$PANEL" || fail "Mihomo con
 grep -Fq 'RuntimeInfoLabel { text: "Latency" }' "$PANEL" || fail "Mihomo node latency is missing"
 grep -Fq 'command: [root.subscriptionControlScript, "latency"]' "$PANEL" || fail "active-node latency is not wired to the main Controller"
 grep -Fq 'refreshRuntimeLatency()' "$PANEL" || fail "active-node latency is not sampled when the panel opens"
+grep -Fq 'root.runtimeNodeLatencyMs > 1000' "$PANEL" || fail "slow active nodes do not trigger recommendations"
+grep -Fq 'if (root.runtimeRunning) {' "$PANEL" || fail "unresponsive active nodes do not trigger recommendations"
+grep -Fq 'pendingRequest = JSON.stringify({mode: "recommend"})' "$PANEL" || fail "recommendation background test is not wired"
+grep -Fq 'text: "RECOMMEND"' "$PANEL" || fail "recommendation section is missing"
+grep -Fq 'model: recommendSubscription.recommendation.top || []' "$PANEL" || fail "per-subscription recommendation Top 3 is not rendered"
+grep -Fq 'height: Math.min(contentHeight, Style.space(180))' "$PANEL" || fail "recommendation list is not height-bounded"
+grep -Fq 'id: recommendList' "$PANEL" || fail "recommendation scrolling region is missing"
+grep -Fq 'component ProxyNodeRow: CursorSurface' "$PANEL" || fail "normal and recommended nodes do not share a row component"
+[[ $(grep -c 'delegate: ProxyNodeRow {' "$PANEL") -eq 2 ]] || fail "shared proxy row is not used by both node lists"
 grep -Fq 'component RuntimeInfoValue: Text' "$PANEL" || fail "Mihomo details do not use the Network-style value layout"
 grep -Fq 'text: root.runtimeRunning ? "󰰐" : "󰰑"' "$PANEL" || fail "Mihomo bar state does not use the standard filled/outline M icons"
 if grep -Fq 'font.weight: root.runtimeRunning' "$PANEL"; then fail "Mihomo bar icon bypasses the standard OpticalGlyph path"; fi
@@ -163,4 +172,4 @@ if grep -Eq '#[[:xdigit:]]{3,8}|font\.pixelSize:[[:space:]]*[0-9]|spacing:[[:spa
   fail "panel contains hard-coded visual tokens"
 fi
 
-echo "ui_tests=ok active_node_latency_on_open=1 one_shot_basic_status=1 no_closed_panel_polling=1 no_default_port_flash=1 on_demand_details=1 runtime_statistics=1 main_controller_latency=1 network_style_grid=1 runtime_settings=1 port_7890=1 inline_config=1 immediate_apply=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"
+echo "ui_tests=ok recommend_top3=1 shared_proxy_row=1 bounded_recommend_scroll=1 active_node_latency_on_open=1 one_shot_basic_status=1 no_closed_panel_polling=1 no_default_port_flash=1 on_demand_details=1 runtime_statistics=1 main_controller_latency=1 network_style_grid=1 runtime_settings=1 port_7890=1 inline_config=1 immediate_apply=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"
