@@ -28,7 +28,7 @@ fi
 jq -e '
   .schemaVersion == 1
   and .id == "fatlj.mihomo"
-  and .version == "0.9.4"
+  and .version == "0.9.5"
   and (.kinds | index("bar-widget") != null)
   and .entryPoints.barWidget == "Panel.qml"
   and .barWidget.defaultSection == "right"
@@ -135,7 +135,8 @@ grep -Fq 'checked: root.runtimeRunning' "$PANEL" || fail "runtime stop switch is
 grep -Fq 'onToggled: root.toggleRuntime()' "$PANEL" || fail "runtime start-stop switch is not wired"
 grep -Fq 'startNode(activeSubscriptionId, activeNodeName)' "$PANEL" || fail "runtime switch does not restart the saved node"
 grep -Fq 'text: root.activeNodeName' "$PANEL" || fail "active node is not shown in the hero"
-grep -Fq 'visible: nodeNameText.implicitWidth > nodeNameText.width && nodeNameHover.hovered' "$PANEL" || fail "elided active nodes do not use a hover tooltip"
+grep -Fq 'nodeNameMetrics.advanceWidth(root.activeNodeName) > nodeNameText.width' "$PANEL" || fail "active-node tooltip does not measure the full unelided name"
+grep -Fq '&& nodeNameHover.hovered' "$PANEL" || fail "active-node tooltip is not hover-gated"
 grep -Fq 'PanelToolTip {' "$PANEL" || fail "active-node tooltip does not use Omarchy's official component"
 grep -Fq 'color: root.foreground' "$PANEL" || fail "hero node does not use the official foreground color"
 grep -Fq 'iconText: "󰓅"' "$PANEL" || fail "latency action does not use the official network meter icon"

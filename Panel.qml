@@ -790,6 +790,11 @@ Panel {
                 width: Math.max(Math.min(nodeNameText.implicitWidth, Style.space(150)), endpointText.implicitWidth)
                 spacing: Style.space(2)
 
+                FontMetrics {
+                  id: nodeNameMetrics
+                  font: nodeNameText.font
+                }
+
                 Text {
                   id: nodeNameText
                   width: parent.width
@@ -801,7 +806,8 @@ Panel {
 
                   HoverHandler { id: nodeNameHover }
                   PanelToolTip {
-                    visible: nodeNameText.implicitWidth > nodeNameText.width && nodeNameHover.hovered
+                    visible: nodeNameMetrics.advanceWidth(root.activeNodeName) > nodeNameText.width
+                      && nodeNameHover.hovered
                     text: root.activeNodeName
                     fontFamily: root.fontFamily
                   }
