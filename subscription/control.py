@@ -11,7 +11,7 @@ import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 try:
     import yaml
@@ -26,6 +26,8 @@ MAX_PORT = 65535
 DEFAULT_SETTINGS = {"port": DEFAULT_PORT, "allowLan": False}
 MAX_CONFIG_BYTES = 8 * 1024 * 1024
 MAX_YAML_ALIASES = 100
+DEFAULT_TEST_URL = "https://www.gstatic.com/generate_204"
+LATENCY_TIMEOUT_MS = 5000
 
 
 class ControlError(Exception):
@@ -397,8 +399,8 @@ def read_selection(state_root: Path):
     return {}
 
 
-def controller_json(socket_path: Path, endpoint: str):
-    connection = UnixHTTPConnection(socket_path)
+def controller_json(socket_path: Path, endpoint: str, timeout=1):
+    connection = UnixHTTPConnection(socket_path, timeout=timeout)
     try:
         connection.request("GET", endpoint)
         response = connection.getresponse()
@@ -448,6 +450,27 @@ def controller_statistics(state_root: Path, node_name: str, running: bool):
         return result
     except (ControlError, OSError, ValueError, http.client.HTTPException):
         return unavailable
+
+
+def active_node_latency():
+    _, state_root = paths()
+    selection = read_selection(state_root)
+    node_name = selection.get("nodeName")
+    if not isinstance(node_name, str) or not node_name:
+        raise ControlError("No active Mihomo node is selected")
+    socket_path = state_root / "runtime" / "controller.sock"
+    if not socket_path.is_socket():
+        raise ControlError("The running Mihomo Controller is unavailable")
+    query = urlencode({"url": DEFAULT_TEST_URL, "timeout": LATENCY_TIMEOUT_MS})
+    result = controller_json(
+        socket_path,
+        f"/proxies/{quote(node_name, safe='')}/delay?{query}",
+        timeout=LATENCY_TIMEOUT_MS / 1000 + 3,
+    )
+    delay = result.get("delay")
+    if not isinstance(delay, int) or delay <= 0:
+        raise ControlError("The active Mihomo node latency test failed")
+    return {"ok": True, "nodeName": node_name, "delayMs": delay}
 
 
 def status(include_statistics=False):
@@ -562,6 +585,8 @@ def main():
             result = status()
         elif command == "details":
             result = status(include_statistics=True)
+        elif command == "latency":
+            result = active_node_latency()
         elif command in {"start", "stop", "apply"}:
             _, state_root = paths()
             state_root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -576,7 +601,7 @@ def main():
                 else:
                     result = stop()
         else:
-            raise ControlError("Usage: control.py start|status|details|stop|apply")
+            raise ControlError("Usage: control.py start|status|details|latency|stop|apply")
     except ControlError as error:
         print(str(error), file=sys.stderr)
         raise SystemExit(1)

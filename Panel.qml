@@ -214,6 +214,11 @@ Panel {
     runtimeStatusProc.running = true
   }
 
+  function refreshRuntimeLatency() {
+    if (runtimeLatencyProc.running) return
+    runtimeLatencyProc.running = true
+  }
+
   function startNode(subscriptionId, nodeName) {
     if (runtimeBusy || !subscriptionId || !nodeName) return
     runtimeError = ""
@@ -360,6 +365,7 @@ Panel {
       refreshStatus()
       refreshSubscriptions()
       refreshRuntime(true)
+      refreshRuntimeLatency()
     }
   }
 
@@ -467,6 +473,24 @@ Panel {
   }
 
   Process {
+    id: runtimeLatencyProc
+    command: [root.subscriptionControlScript, "latency"]
+    stdout: StdioCollector {
+      id: runtimeLatencyStdout
+      waitForEnd: true
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0) return
+      try {
+        var result = JSON.parse(String(runtimeLatencyStdout.text || "{}"))
+        root.runtimeNodeLatencyMs = Number(result.delayMs || 0)
+        if (root.runtimeNodeLatencyMs > 0) root.runtimeNodeAlive = true
+      } catch (error) {
+      }
+    }
+  }
+
+  Process {
     id: nodeStartProc
     property string pendingRequest: ""
     command: [root.subscriptionControlScript, "start"]
@@ -490,6 +514,7 @@ Panel {
           root.applyRuntimeStatus(JSON.stringify(result))
           root.runtimeMessage = "Running " + result.nodeName + " on " + result.bindAddress + ":" + result.port
           root.runtimeError = ""
+          if (root.opened) root.refreshRuntimeLatency()
         } catch (error) {
           root.runtimeError = "Mihomo started but its runtime status could not be read"
         }

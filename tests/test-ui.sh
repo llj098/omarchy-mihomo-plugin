@@ -28,7 +28,7 @@ fi
 jq -e '
   .schemaVersion == 1
   and .id == "fatlj.mihomo"
-  and .version == "0.8.5"
+  and .version == "0.8.6"
   and (.kinds | index("bar-widget") != null)
   and .entryPoints.barWidget == "Panel.qml"
   and .barWidget.defaultSection == "right"
@@ -150,6 +150,8 @@ grep -Fq 'RuntimeInfoLabel { text: "Downloaded" }' "$PANEL" || fail "Mihomo down
 grep -Fq 'RuntimeInfoLabel { text: "Uploaded" }' "$PANEL" || fail "Mihomo upload total is missing"
 grep -Fq 'RuntimeInfoLabel { text: "Connections" }' "$PANEL" || fail "Mihomo connection count is missing"
 grep -Fq 'RuntimeInfoLabel { text: "Latency" }' "$PANEL" || fail "Mihomo node latency is missing"
+grep -Fq 'command: [root.subscriptionControlScript, "latency"]' "$PANEL" || fail "active-node latency is not wired to the main Controller"
+grep -Fq 'refreshRuntimeLatency()' "$PANEL" || fail "active-node latency is not sampled when the panel opens"
 grep -Fq 'component RuntimeInfoValue: Text' "$PANEL" || fail "Mihomo details do not use the Network-style value layout"
 grep -Fq 'text: root.runtimeRunning ? "󰰐" : "󰰑"' "$PANEL" || fail "Mihomo bar state does not use the standard filled/outline M icons"
 if grep -Fq 'font.weight: root.runtimeRunning' "$PANEL"; then fail "Mihomo bar icon bypasses the standard OpticalGlyph path"; fi
@@ -161,4 +163,4 @@ if grep -Eq '#[[:xdigit:]]{3,8}|font\.pixelSize:[[:space:]]*[0-9]|spacing:[[:spa
   fail "panel contains hard-coded visual tokens"
 fi
 
-echo "ui_tests=ok one_shot_basic_status=1 no_closed_panel_polling=1 no_default_port_flash=1 on_demand_details=1 runtime_statistics=1 main_controller_latency=1 network_style_grid=1 runtime_settings=1 port_7890=1 inline_config=1 immediate_apply=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"
+echo "ui_tests=ok active_node_latency_on_open=1 one_shot_basic_status=1 no_closed_panel_polling=1 no_default_port_flash=1 on_demand_details=1 runtime_statistics=1 main_controller_latency=1 network_style_grid=1 runtime_settings=1 port_7890=1 inline_config=1 immediate_apply=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"

@@ -113,6 +113,32 @@ finally:
     control.controller_json = original_controller_json
 assert control.controller_statistics(Path("/tmp/state"), "Node A", False) == {"available": False}
 
+with tempfile.TemporaryDirectory() as temporary:
+    state_root = Path(temporary)
+    runtime_root = state_root / "runtime"
+    runtime_root.mkdir()
+    socket_path = runtime_root / "controller.sock"
+    control.atomic_json(state_root / "selection.json", {"nodeName": "Node A"})
+    original_paths = control.paths
+    original_controller_json = control.controller_json
+    requests = []
+    try:
+        control.paths = lambda: (Path("/tmp/subscriptions"), state_root)
+        control.controller_json = lambda socket, endpoint, timeout=1: requests.append(
+            (socket, endpoint, timeout)
+        ) or {"delay": 123}
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as controller_socket:
+            controller_socket.bind(str(socket_path))
+            assert control.active_node_latency() == {
+                "ok": True, "nodeName": "Node A", "delayMs": 123
+            }
+    finally:
+        control.paths = original_paths
+        control.controller_json = original_controller_json
+    assert requests[0][0] == socket_path
+    assert requests[0][1].startswith("/proxies/Node%20A/delay?")
+    assert requests[0][2] == 8
+
 for invalid_settings in (
     {"port": 1023, "allowLan": False},
     {"port": 65536, "allowLan": False},
@@ -270,4 +296,4 @@ with tempfile.TemporaryDirectory() as temporary:
             else:
                 os.environ[key] = value
 
-print("control_tests=ok settings_persistence=1 unix_controller=1 controller_statistics=1 port_7890=1 occupied_port_guard=1 apply_rollback=1 traversal_rejected=1")
+print("control_tests=ok settings_persistence=1 unix_controller=1 controller_statistics=1 active_node_latency=1 port_7890=1 occupied_port_guard=1 apply_rollback=1 traversal_rejected=1")
