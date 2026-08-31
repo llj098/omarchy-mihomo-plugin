@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import concurrent.futures
+import ctypes
 import http.client
 import json
 import os
@@ -232,6 +233,14 @@ def query_delays(socket_path: Path, group_name: str, node_names, test_url: str):
     return query_proxies(socket_path, node_names, test_url)
 
 
+def set_parent_death_signal():
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(1, signal.SIGTERM) != 0:
+        os._exit(127)
+    if os.getppid() == 1:
+        os.kill(os.getpid(), signal.SIGTERM)
+
+
 def temporary_delays(document, node_names, test_url: str):
     runtime = prepare_temporary_document(document, node_names)
     process = None
@@ -253,6 +262,7 @@ def temporary_delays(document, node_names, test_url: str):
                  "-ext-ctl-unix", str(socket_path)],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                preexec_fn=set_parent_death_signal,
             )
             for _ in range(100):
                 if socket_path.is_socket():

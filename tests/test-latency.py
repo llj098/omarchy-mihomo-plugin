@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 import importlib.util
 import json
+import os
 import socket
+import subprocess
+import sys
 import tempfile
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -119,4 +123,30 @@ with tempfile.TemporaryDirectory() as temporary:
     assert by_id["second-sub"]["top"] == []
     assert "inline proxy" in by_id["second-sub"]["error"]
 
-print("latency_tests=ok group_members=1 active_main_controller=1 native_group_api=1 temporary_recommend_mihomo=1 top3_per_subscription=1")
+parent_script = f'''\
+import importlib.util, subprocess, time
+spec = importlib.util.spec_from_file_location("latency_child", {str(ROOT / "subscription/latency.py")!r})
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+child = subprocess.Popen(["sleep", "30"], preexec_fn=module.set_parent_death_signal)
+print(child.pid, flush=True)
+time.sleep(30)
+'''
+parent = subprocess.Popen(
+    [sys.executable, "-c", parent_script], stdout=subprocess.PIPE, text=True
+)
+child_pid = int(parent.stdout.readline().strip())
+parent.kill()
+parent.wait(timeout=2)
+child_stopped = False
+for _ in range(40):
+    status = Path(f"/proc/{child_pid}/stat")
+    if not status.exists() or status.read_text().split()[2] == "Z":
+        child_stopped = True
+        break
+    time.sleep(0.05)
+if not child_stopped:
+    os.kill(child_pid, 9)
+    raise AssertionError("temporary Mihomo child survived its helper")
+
+print("latency_tests=ok group_members=1 active_main_controller=1 native_group_api=1 temporary_recommend_mihomo=1 parent_death_cleanup=1 top3_per_subscription=1")
