@@ -82,6 +82,39 @@ finally:
     latency.query_group = original_query_group
     latency.query_proxy = original_query_proxy
 
+original_active_controller = latency.active_controller
+original_query_delays = latency.query_delays
+original_temporary_delays = latency.temporary_delays
+try:
+    latency.active_controller = lambda _state, _subscription: Path("/tmp/main.sock")
+    latency.query_delays = lambda socket_path, group_name, names, test_url: {
+        "Node A": 11, "Node B": 22
+    }
+    delays, controller = latency.group_delays(
+        Path("/tmp/state"), "active-sub", document, "PROXY",
+        ["Node A", "Node B"], "https://test"
+    )
+    assert controller == "main"
+    assert delays == {"Node A": 11, "Node B": 22}
+
+    def inactive_controller(_state, _subscription):
+        raise latency.LatencyError("Start Mihomo before running a speed test")
+
+    latency.active_controller = inactive_controller
+    latency.temporary_delays = lambda _document, names, _url: {
+        name: index + 30 for index, name in enumerate(names)
+    }
+    delays, controller = latency.group_delays(
+        Path("/tmp/state"), "inactive-sub", document, "PROXY",
+        ["Node A", "Node B"], "https://test"
+    )
+    assert controller == "temporary"
+    assert delays == {"Node A": 30, "Node B": 31}
+finally:
+    latency.active_controller = original_active_controller
+    latency.query_delays = original_query_delays
+    latency.temporary_delays = original_temporary_delays
+
 prepared = latency.prepare_temporary_document(document, ["Node A", "Node B", "Node C"])
 assert prepared["proxy-groups"] == [{
     "name": latency.TEST_GROUP,
@@ -149,4 +182,4 @@ if not child_stopped:
     os.kill(child_pid, 9)
     raise AssertionError("temporary Mihomo child survived its helper")
 
-print("latency_tests=ok group_members=1 active_main_controller=1 native_group_api=1 temporary_recommend_mihomo=1 parent_death_cleanup=1 top3_per_subscription=1")
+print("latency_tests=ok group_members=1 active_main_controller=1 inactive_temporary_controller=1 native_group_api=1 temporary_recommend_mihomo=1 parent_death_cleanup=1 top3_per_subscription=1")

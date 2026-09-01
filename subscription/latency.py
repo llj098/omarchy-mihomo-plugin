@@ -241,6 +241,15 @@ def set_parent_death_signal():
         os.kill(os.getpid(), signal.SIGTERM)
 
 
+def group_delays(state_root: Path, subscription_id: str, document, group_name: str,
+                 node_names, test_url: str):
+    try:
+        socket_path = active_controller(state_root, subscription_id)
+        return query_delays(socket_path, group_name, node_names, test_url), "main"
+    except (LatencyError, OSError, http.client.HTTPException):
+        return temporary_delays(document, node_names, test_url), "temporary"
+
+
 def temporary_delays(document, node_names, test_url: str):
     runtime = prepare_temporary_document(document, node_names)
     process = None
@@ -342,8 +351,9 @@ def main():
         config = safe_subscription(data_dir, subscription_id)
         document = load_document(config)
         names = group_nodes(document, group_name)
-        socket_path = active_controller(state_root, subscription_id)
-        delays = query_delays(socket_path, group_name, names, test_url)
+        delays, controller = group_delays(
+            state_root, subscription_id, document, group_name, names, test_url
+        )
         results = []
         for name in names:
             delay = delays.get(name)
@@ -352,7 +362,7 @@ def main():
             else:
                 results.append({"name": name, "status": "timeout", "delayMs": None})
         json.dump({"subscriptionId": subscription_id, "groupName": group_name,
-                   "url": test_url, "results": results}, sys.stdout,
+                   "url": test_url, "controller": controller, "results": results}, sys.stdout,
                   ensure_ascii=False, separators=(",", ":"))
         sys.stdout.write("\n")
     except (LatencyError, OSError, http.client.HTTPException, yaml.YAMLError) as error:

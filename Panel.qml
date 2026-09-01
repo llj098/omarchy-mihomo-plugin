@@ -13,7 +13,7 @@ Panel {
   ipcTarget: "fatlj.mihomo"
 
   readonly property string pluginDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/fatlj.mihomo"
-  readonly property string pluginVersion: "0.9.6"
+  readonly property string pluginVersion: "0.9.7"
   readonly property string statusScript: pluginDir + "/bootstrap/status.sh"
   readonly property string bootstrapScript: pluginDir + "/bootstrap/bootstrap.sh"
   readonly property string subscriptionStatusScript: pluginDir + "/subscription/status.sh"
@@ -308,7 +308,7 @@ Panel {
   }
 
   function startLatency(subscriptionId, groupName) {
-    if (latencyProc.running || !runtimeRunning || subscriptionId !== activeSubscriptionId) return
+    if (latencyProc.running) return
     latencyError = ""
     latencyBusyKey = groupExpansionKey(subscriptionId, groupName)
     latencyProc.pendingRequest = JSON.stringify({subscriptionId: subscriptionId, groupName: groupName})
@@ -1185,16 +1185,15 @@ Panel {
                           visible: groupList.group.directNodeCount > 0
                           iconText: "󰓅"
                           tooltipText: testing ? "Testing"
-                            : !root.runtimeRunning ? "Start Mihomo to test"
-                            : !controllerAvailable ? "Start a node from this subscription to test"
-                            : "Speed Test"
+                            : controllerAvailable ? "Speed Test · Main Controller"
+                            : "Speed Test · Temporary Mihomo"
                           foreground: root.foreground
                           fontFamily: root.fontFamily
                           iconSize: Style.font.subtitle * 1.5
                           horizontalPadding: Style.space(5)
                           verticalPadding: Style.space(2)
-                          enabled: controllerAvailable && !latencyProc.running
-                          opacity: (!controllerAvailable || (latencyProc.running && !testing)) ? 0.5 : 1.0
+                          enabled: !latencyProc.running
+                          opacity: latencyProc.running && !testing ? 0.5 : 1.0
                           Layout.alignment: Qt.AlignVCenter
                           Layout.rightMargin: Style.space(4)
                           onClicked: root.startLatency(
