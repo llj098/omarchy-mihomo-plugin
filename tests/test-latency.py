@@ -82,6 +82,36 @@ finally:
     latency.query_group = original_query_group
     latency.query_proxy = original_query_proxy
 
+original_query_json = latency.query_json
+original_query_proxies = latency.query_proxies
+original_wait_for_proxy_inventory = latency.wait_for_proxy_inventory
+original_sleep = latency.time.sleep
+try:
+    inventories = iter([
+        {"proxies": {}},
+        {"proxies": {"Node A": {}}},
+        {"proxies": {"Node A": {}, "Node B": {}}},
+    ])
+    latency.query_json = lambda _socket, endpoint: next(inventories)
+    latency.time.sleep = lambda _seconds: None
+    latency.wait_for_proxy_inventory(Path("/tmp/controller.sock"), ["Node A", "Node B"])
+
+    calls = []
+    latency.wait_for_proxy_inventory = lambda _socket, _names: None
+    latency.query_proxies = lambda _socket, _names, _url: calls.append(True) or (
+        {"Node A": None, "Node B": None} if len(calls) == 1
+        else {"Node A": 40, "Node B": 50}
+    )
+    assert latency.query_ready_proxies(
+        Path("/tmp/controller.sock"), ["Node A", "Node B"], "https://test"
+    ) == {"Node A": 40, "Node B": 50}
+    assert len(calls) == 2
+finally:
+    latency.query_json = original_query_json
+    latency.query_proxies = original_query_proxies
+    latency.wait_for_proxy_inventory = original_wait_for_proxy_inventory
+    latency.time.sleep = original_sleep
+
 original_active_controller = latency.active_controller
 original_query_delays = latency.query_delays
 original_temporary_delays = latency.temporary_delays
@@ -182,4 +212,4 @@ if not child_stopped:
     os.kill(child_pid, 9)
     raise AssertionError("temporary Mihomo child survived its helper")
 
-print("latency_tests=ok group_members=1 active_main_controller=1 inactive_temporary_controller=1 native_group_api=1 temporary_recommend_mihomo=1 parent_death_cleanup=1 top3_per_subscription=1")
+print("latency_tests=ok cold_inventory_barrier=1 quick_all_timeout_retry=1 group_members=1 active_main_controller=1 inactive_temporary_controller=1 native_group_api=1 temporary_recommend_mihomo=1 parent_death_cleanup=1 top3_per_subscription=1")

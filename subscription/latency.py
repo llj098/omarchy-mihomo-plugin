@@ -227,6 +227,31 @@ def query_proxies(socket_path: Path, node_names, test_url: str):
         return dict(zip(node_names, delays))
 
 
+def wait_for_proxy_inventory(socket_path: Path, node_names):
+    expected = set(node_names)
+    for _ in range(100):
+        try:
+            inventory = query_json(socket_path, "/proxies").get("proxies")
+            if isinstance(inventory, dict) and expected.issubset(inventory):
+                return
+        except (LatencyError, OSError, http.client.HTTPException):
+            pass
+        time.sleep(0.05)
+    raise LatencyError("Temporary Mihomo proxy inventory did not become ready")
+
+
+def query_ready_proxies(socket_path: Path, node_names, test_url: str):
+    wait_for_proxy_inventory(socket_path, node_names)
+    started = time.monotonic()
+    delays = query_proxies(socket_path, node_names, test_url)
+    if any(isinstance(delay, int) and delay > 0 for delay in delays.values()):
+        return delays
+    if time.monotonic() - started < 1:
+        time.sleep(0.25)
+        return query_proxies(socket_path, node_names, test_url)
+    return delays
+
+
 def query_delays(socket_path: Path, group_name: str, node_names, test_url: str):
     if group_name not in SYNTHETIC_GROUPS:
         return query_group(socket_path, group_name, test_url)
@@ -281,7 +306,7 @@ def temporary_delays(document, node_names, test_url: str):
                 time.sleep(0.05)
             if not socket_path.is_socket():
                 raise LatencyError("Temporary Mihomo Controller did not become ready")
-            return query_proxies(socket_path, node_names, test_url)
+            return query_ready_proxies(socket_path, node_names, test_url)
         finally:
             if process is not None and process.poll() is None:
                 process.terminate()

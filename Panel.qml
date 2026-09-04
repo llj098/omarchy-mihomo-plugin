@@ -13,7 +13,7 @@ Panel {
   ipcTarget: "fatlj.mihomo"
 
   readonly property string pluginDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/fatlj.mihomo"
-  readonly property string pluginVersion: "0.9.7"
+  readonly property string pluginVersion: "0.9.8"
   readonly property string statusScript: pluginDir + "/bootstrap/status.sh"
   readonly property string bootstrapScript: pluginDir + "/bootstrap/bootstrap.sh"
   readonly property string subscriptionStatusScript: pluginDir + "/subscription/status.sh"

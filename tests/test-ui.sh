@@ -28,7 +28,7 @@ fi
 jq -e '
   .schemaVersion == 1
   and .id == "fatlj.mihomo"
-  and .version == "0.9.7"
+  and .version == "0.9.8"
   and (.kinds | index("bar-widget") != null)
   and .entryPoints.barWidget == "Panel.qml"
   and .barWidget.defaultSection == "right"
@@ -80,7 +80,7 @@ grep -Fq 'command: [root.subscriptionStatusScript]' "$PANEL" || fail "subscripti
 grep -Fq 'stdinEnabled: true' "$PANEL" || fail "subscription source is exposed through argv instead of stdin"
 [[ $(grep -c 'PanelSeparator {' "$PANEL") -ge 3 ]] || fail "installation, settings, and subscriptions are not visibly separated"
 grep -Fq 'text: "CONFIG"' "$PANEL" || fail "config section is missing"
-grep -Fq 'readonly property string pluginVersion: "0.9.7"' "$PANEL" || fail "panel plugin version does not match the manifest"
+grep -Fq 'readonly property string pluginVersion: "0.9.8"' "$PANEL" || fail "panel plugin version does not match the manifest"
 grep -Fq 'text: "PLUGIN"' "$PANEL" || fail "plugin version section is missing"
 grep -Fq 'value: root.pluginVersion' "$PANEL" || fail "plugin version value is not rendered"
 grep -Fq 'meta: root.mihomoInstalled ? root.packageVersion : ""' "$PANEL" || fail "Mihomo version is not under the title"
@@ -184,5 +184,7 @@ if grep -Eq '#[[:xdigit:]]{3,8}|font\.pixelSize:[[:space:]]*[0-9]|spacing:[[:spa
 fi
 
 grep -Fq 'preexec_fn=set_parent_death_signal' "$LATENCY_HELPER" || fail "temporary Mihomo can survive a killed recommendation helper"
+grep -Fq 'wait_for_proxy_inventory(socket_path, node_names)' "$LATENCY_HELPER" || fail "temporary latency starts before its proxy inventory is ready"
+grep -Fq 'time.monotonic() - started < 1' "$LATENCY_HELPER" || fail "quick all-node cold-start failures are not retried"
 
-echo "ui_tests=ok manual_temporary_latency=1 bottom_plugin_version=1 official_truncated_node_tooltip=1 null_connections_zero=1 parent_death_cleanup=1 healthy_node_cancels_recommend=1 recommend_top3=1 shared_proxy_row=1 bounded_recommend_scroll=1 active_node_latency_on_open=1 one_shot_basic_status=1 no_closed_panel_polling=1 no_default_port_flash=1 on_demand_details=1 runtime_statistics=1 main_controller_latency=1 network_style_grid=1 runtime_settings=1 port_7890=1 inline_config=1 immediate_apply=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"
+echo "ui_tests=ok cold_start_latency_guard=1 manual_temporary_latency=1 bottom_plugin_version=1 official_truncated_node_tooltip=1 null_connections_zero=1 parent_death_cleanup=1 healthy_node_cancels_recommend=1 recommend_top3=1 shared_proxy_row=1 bounded_recommend_scroll=1 active_node_latency_on_open=1 one_shot_basic_status=1 no_closed_panel_polling=1 no_default_port_flash=1 on_demand_details=1 runtime_statistics=1 main_controller_latency=1 network_style_grid=1 runtime_settings=1 port_7890=1 inline_config=1 immediate_apply=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"
