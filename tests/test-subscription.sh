@@ -86,9 +86,7 @@ proxies:
     server: remote-node-secret.invalid
     uuid: remote-uuid-secret
 EOF
-# shellcheck disable=SC1090
-source ~/.venv/bin/activate
-python - "$body" "$port_file" "$proxy_log" <<'PY' &
+python3 - "$body" "$port_file" "$proxy_log" <<'PY' &
 import http.server
 import pathlib
 import socketserver
