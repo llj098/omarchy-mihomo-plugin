@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-PLUGIN_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
-DATA_DIR="$PLUGIN_DIR/data/subscriptions"
+DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/fatlj.mihomo/subscriptions"
 CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/fatlj-mihomo-subscription"
 MAX_BYTES=8388608
 WORK=""
@@ -91,9 +89,9 @@ chmod 0700 "$(dirname "$DATA_DIR")" "$DATA_DIR" "$CACHE_ROOT" 2>/dev/null || tru
 [[ ! -L $(dirname "$DATA_DIR") && ! -L $DATA_DIR ]] ||
   die "Subscription data directories must not be symbolic links"
 [[ $(stat -Lc %d "$DATA_DIR") == $(stat -Lc %d "$CACHE_ROOT") ]] ||
-  die "Subscription cache and plugin data must be on the same filesystem"
-# All downloads, copies, and Mihomo validation happen outside the recursively
-# watched plugin tree. Only the final atomic rename is visible to Omarchy.
+  die "Subscription cache and data must be on the same filesystem"
+# Downloads, validation, and committed subscription data all stay outside the
+# recursively watched plugin tree, so importing cannot rebuild the panel.
 WORK="$(mktemp -d "$CACHE_ROOT/import.XXXXXX")"
 candidate="$WORK/config.yaml"
 kind=""
@@ -145,8 +143,13 @@ if [[ $kind == url ]]; then
   if [[ -d $destination ]]; then
     [[ -f $destination/source.url ]] || die "Existing URL subscription metadata is missing"
     [[ $(<"$destination/source.url") == "$source" ]] || die "Subscription URL identity collision"
-    mv -f -- "$candidate" "$destination/config.yaml"
-    action=updated
+    if cmp -s -- "$candidate" "$destination/config.yaml"; then
+      rm -f -- "$candidate"
+      action=unchanged
+    else
+      mv -f -- "$candidate" "$destination/config.yaml"
+      action=updated
+    fi
   else
     entry="$WORK/entry"
     mkdir -m 0700 "$entry"

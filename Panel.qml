@@ -13,10 +13,11 @@ Panel {
   ipcTarget: "fatlj.mihomo"
 
   readonly property string pluginDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/fatlj.mihomo"
-  readonly property string pluginVersion: "0.9.8"
+  readonly property string pluginVersion: "0.10.0"
   readonly property string statusScript: pluginDir + "/bootstrap/status.sh"
   readonly property string bootstrapScript: pluginDir + "/bootstrap/bootstrap.sh"
   readonly property string subscriptionStatusScript: pluginDir + "/subscription/status.sh"
+  readonly property string subscriptionMigrationScript: pluginDir + "/subscription/migrate.sh"
   readonly property string subscriptionImportScript: pluginDir + "/subscription/import.sh"
   readonly property string subscriptionControlScript: pluginDir + "/subscription/control.py"
   readonly property string latencyScript: pluginDir + "/subscription/latency.py"
@@ -399,7 +400,25 @@ Panel {
 
   onBootstrapAvailableChanged: if (!bootstrapAvailable) cursorActive = false
 
-  Component.onCompleted: refreshRuntime(false)
+  Component.onCompleted: {
+    subscriptionMigrationProc.running = true
+    refreshRuntime(false)
+  }
+
+  Process {
+    id: subscriptionMigrationProc
+    command: [root.subscriptionMigrationScript]
+    stderr: StdioCollector {
+      id: subscriptionMigrationStderr
+      waitForEnd: true
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0)
+        root.subscriptionStatusError = String(
+          subscriptionMigrationStderr.text || "Could not migrate subscription data").trim()
+      root.refreshSubscriptions()
+    }
+  }
 
   Process {
     id: statusProc
@@ -468,7 +487,9 @@ Panel {
       if (exitCode === 0) {
         try {
           var result = JSON.parse(String(subscriptionImportStdout.text || "{}"))
-          root.subscriptionMessage = result.action === "updated" ? "Subscription updated" : "Subscription added"
+          root.subscriptionMessage = result.action === "updated" ? "Subscription updated"
+            : result.action === "unchanged" ? "Subscription unchanged"
+            : "Subscription added"
           root.subscriptionError = ""
           subscriptionInput.text = ""
           root.showSubscriptionInput = false

@@ -4,6 +4,7 @@ set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 STATUS="$ROOT/bootstrap/status.sh"
 SUBSCRIPTION_IMPORT="$ROOT/subscription/import.sh"
+SUBSCRIPTION_MIGRATE="$ROOT/subscription/migrate.sh"
 SUBSCRIPTION_STATUS="$ROOT/subscription/status.sh"
 SUBSCRIPTION_STATUS_PY="$ROOT/subscription/status.py"
 SUBSCRIPTION_CONTROL="$ROOT/subscription/control.py"
@@ -18,17 +19,18 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 
 bash -n "$STATUS"
 bash -n "$SUBSCRIPTION_IMPORT"
+bash -n "$SUBSCRIPTION_MIGRATE"
 bash -n "$SUBSCRIPTION_STATUS"
 bash -n "$UFW_HELPER"
 python3 -c 'import ast, pathlib, sys; [ast.parse(pathlib.Path(path).read_text()) for path in sys.argv[1:]]' \
   "$SUBSCRIPTION_STATUS_PY" "$SUBSCRIPTION_CONTROL" "$LATENCY_HELPER"
 if command -v shellcheck >/dev/null 2>&1; then
-  shellcheck "$STATUS" "$SUBSCRIPTION_IMPORT" "$SUBSCRIPTION_STATUS" "$UFW_HELPER"
+  shellcheck "$STATUS" "$SUBSCRIPTION_IMPORT" "$SUBSCRIPTION_MIGRATE" "$SUBSCRIPTION_STATUS" "$UFW_HELPER"
 fi
 jq -e '
   .schemaVersion == 1
   and .id == "fatlj.mihomo"
-  and .version == "0.9.8"
+  and .version == "0.10.0"
   and (.kinds | index("bar-widget") != null)
   and .entryPoints.barWidget == "Panel.qml"
   and .barWidget.defaultSection == "right"
@@ -76,11 +78,12 @@ done
 grep -Fq 'visible: root.bootstrapAvailable' "$PANEL" || fail "Bootstrap visibility is not state-gated"
 grep -Fq 'command: [root.bootstrapScript, "launch"]' "$PANEL" || fail "Bootstrap button does not invoke the reviewed script"
 grep -Fq 'command: [root.subscriptionImportScript]' "$PANEL" || fail "subscription import is not separated from Bootstrap"
+grep -Fq 'command: [root.subscriptionMigrationScript]' "$PANEL" || fail "legacy subscription migration is not wired"
 grep -Fq 'command: [root.subscriptionStatusScript]' "$PANEL" || fail "subscription status is not separated from Bootstrap"
 grep -Fq 'stdinEnabled: true' "$PANEL" || fail "subscription source is exposed through argv instead of stdin"
 [[ $(grep -c 'PanelSeparator {' "$PANEL") -ge 3 ]] || fail "installation, settings, and subscriptions are not visibly separated"
 grep -Fq 'text: "CONFIG"' "$PANEL" || fail "config section is missing"
-grep -Fq 'readonly property string pluginVersion: "0.9.8"' "$PANEL" || fail "panel plugin version does not match the manifest"
+grep -Fq 'readonly property string pluginVersion: "0.10.0"' "$PANEL" || fail "panel plugin version does not match the manifest"
 grep -Fq 'text: "PLUGIN"' "$PANEL" || fail "plugin version section is missing"
 grep -Fq 'value: root.pluginVersion' "$PANEL" || fail "plugin version value is not rendered"
 grep -Fq 'meta: root.mihomoInstalled ? root.packageVersion : ""' "$PANEL" || fail "Mihomo version is not under the title"
@@ -151,7 +154,8 @@ grep -Fq 'updateRuntimeStatistics(parsed.statistics, runtimeRunning)' "$PANEL" |
 grep -Fq 'command: [root.subscriptionControlScript, includeDetails ? "details" : "status"]' "$PANEL" || fail "Controller details are not separated from basic status"
 grep -Fq 'running: root.opened || bootstrapProc.running' "$PANEL" || fail "status polling continues while the panel is closed"
 grep -Fq 'root.refreshRuntime(root.opened)' "$PANEL" || fail "Controller polling is not gated by panel visibility"
-grep -Fq 'Component.onCompleted: refreshRuntime(false)' "$PANEL" || fail "bar state is not initialized after a Shell/plugin reload"
+grep -Fq 'subscriptionMigrationProc.running = true' "$PANEL" || fail "legacy subscriptions are not migrated on plugin load"
+grep -Fq 'refreshRuntime(false)' "$PANEL" || fail "bar state is not initialized after a Shell/plugin reload"
 grep -Fq 'RuntimeInfoLabel { text: "Receiving" }' "$PANEL" || fail "Mihomo receiving rate is missing"
 grep -Fq 'RuntimeInfoLabel { text: "Sending" }' "$PANEL" || fail "Mihomo sending rate is missing"
 grep -Fq 'RuntimeInfoLabel { text: "Downloaded" }' "$PANEL" || fail "Mihomo download total is missing"
@@ -187,4 +191,6 @@ grep -Fq 'preexec_fn=set_parent_death_signal' "$LATENCY_HELPER" || fail "tempora
 grep -Fq 'wait_for_proxy_inventory(socket_path, node_names)' "$LATENCY_HELPER" || fail "temporary latency starts before its proxy inventory is ready"
 grep -Fq 'time.monotonic() - started < 1' "$LATENCY_HELPER" || fail "quick all-node cold-start failures are not retried"
 
-echo "ui_tests=ok cold_start_latency_guard=1 manual_temporary_latency=1 bottom_plugin_version=1 official_truncated_node_tooltip=1 null_connections_zero=1 parent_death_cleanup=1 healthy_node_cancels_recommend=1 recommend_top3=1 shared_proxy_row=1 bounded_recommend_scroll=1 active_node_latency_on_open=1 one_shot_basic_status=1 no_closed_panel_polling=1 no_default_port_flash=1 on_demand_details=1 runtime_statistics=1 main_controller_latency=1 network_style_grid=1 runtime_settings=1 port_7890=1 inline_config=1 immediate_apply=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"
+grep -Fq 'result.action === "unchanged" ? "Subscription unchanged"' "$PANEL" || fail "unchanged subscription imports are not reported"
+
+echo "ui_tests=ok external_subscription_data=1 migration_on_load=1 unchanged_import=1 cold_start_latency_guard=1 manual_temporary_latency=1 bottom_plugin_version=1 official_truncated_node_tooltip=1 null_connections_zero=1 parent_death_cleanup=1 healthy_node_cancels_recommend=1 recommend_top3=1 shared_proxy_row=1 bounded_recommend_scroll=1 active_node_latency_on_open=1 one_shot_basic_status=1 no_closed_panel_polling=1 no_default_port_flash=1 on_demand_details=1 runtime_statistics=1 main_controller_latency=1 network_style_grid=1 runtime_settings=1 port_7890=1 inline_config=1 immediate_apply=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"

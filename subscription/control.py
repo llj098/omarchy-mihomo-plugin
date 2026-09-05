@@ -59,9 +59,7 @@ class LimitedSafeLoader(yaml.SafeLoader):
 
 
 def paths():
-    script_dir = Path(__file__).resolve().parent
-    plugin_dir = script_dir.parent
-    data_dir = plugin_dir / "data" / "subscriptions"
+    data_dir = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "fatlj.mihomo/subscriptions"
     state_root = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "fatlj.mihomo"
     if os.environ.get("MIHOMO_CONTROL_TESTING") == "1":
         data_dir = Path(os.environ.get("MIHOMO_SUBSCRIPTION_DATA", data_dir))

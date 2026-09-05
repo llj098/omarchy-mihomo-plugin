@@ -40,8 +40,7 @@ class UnixHTTPConnection(http.client.HTTPConnection):
 
 
 def plugin_paths():
-    script_dir = Path(__file__).resolve().parent
-    data_dir = script_dir.parent / "data" / "subscriptions"
+    data_dir = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "fatlj.mihomo/subscriptions"
     state_root = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "fatlj.mihomo"
     if os.environ.get("MIHOMO_LATENCY_TESTING") == "1":
         if os.environ.get("MIHOMO_SUBSCRIPTION_DATA"):

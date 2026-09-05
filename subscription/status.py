@@ -34,8 +34,7 @@ class LimitedSafeLoader(yaml.SafeLoader):
 
 
 def data_directory() -> Path:
-    script_dir = Path(__file__).resolve().parent
-    default = script_dir.parent / "data" / "subscriptions"
+    default = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "fatlj.mihomo/subscriptions"
     if os.environ.get("MIHOMO_SUBSCRIPTION_TESTING") == "1":
         override = os.environ.get("MIHOMO_SUBSCRIPTION_DATA")
         if override:

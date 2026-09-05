@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 IMPORT="$ROOT/subscription/import.sh"
+MIGRATE="$ROOT/subscription/migrate.sh"
 STATUS="$ROOT/subscription/status.sh"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/mihomo-subscription-test.XXXXXX")"
 SERVER_PID=""
@@ -12,8 +13,10 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 assert_eq() { [[ $1 == "$2" ]] || fail "expected '$2', got '$1'"; }
 
 bash -n "$IMPORT"
+bash -n "$MIGRATE"
 bash -n "$STATUS"
-if command -v shellcheck >/dev/null 2>&1; then shellcheck "$IMPORT" "$STATUS"; fi
+if command -v shellcheck >/dev/null 2>&1; then shellcheck "$IMPORT" "$MIGRATE" "$STATUS"; fi
+grep -Fq 'XDG_DATA_HOME' "$IMPORT" || fail "production subscriptions are still stored in the watched plugin tree"
 
 fakebin="$TMP/bin"
 mkdir -p "$fakebin"
@@ -155,6 +158,12 @@ remote_two="$(printf '%s\n' "$url" | env "${common_env[@]}" \
 jq -e '.action == "updated" and .id == $id' --arg id "url-$url_hash" <<<"$remote_two" >/dev/null
 grep -Fq 'remote-two' "$url_dir/config.yaml" || fail "duplicate URL did not update its existing entry"
 [[ $(find "$data" -maxdepth 1 -type d -name 'url-*' | wc -l) == 1 ]] || fail "duplicate URL created another entry"
+unchanged_mtime="$(stat -Lc %Y "$url_dir/config.yaml")"
+sleep 1
+remote_unchanged="$(printf '%s\n' "$url" | env "${common_env[@]}" \
+  http_proxy="http://127.0.0.1:$port" no_proxy= NO_PROXY= "$IMPORT")"
+jq -e '.action == "unchanged" and .id == $id' --arg id "url-$url_hash" <<<"$remote_unchanged" >/dev/null
+assert_eq "$(stat -Lc %Y "$url_dir/config.yaml")" "$unchanged_mtime"
 
 before_hash="$(sha256sum "$url_dir/config.yaml" | awk '{print $1}')"
 printf 'INVALID\n' >"$body"
@@ -198,10 +207,10 @@ if grep -Eq 'top-secret|node-secret|password-secret|uuid-secret' <<<"$status_jso
 fi
 
 if command -v inotifywait >/dev/null 2>&1; then
-  watched_data="$TMP/watched-plugin/data/subscriptions"
+  watched_data="$TMP/external-data/subscriptions"
   watched_cache="$TMP/watched-cache"
   watched_events="$TMP/watched-events"
-  mkdir -p "$watched_data" "$watched_cache"
+  mkdir -p "$watched_data" "$watched_cache" "$TMP/watched-plugin"
   inotifywait -m -r -q -e close_write,create,delete,move --format '%w%f' \
     "$TMP/watched-plugin" >"$watched_events" &
   watcher_pid=$!
@@ -215,8 +224,30 @@ if command -v inotifywait >/dev/null 2>&1; then
   kill "$watcher_pid" 2>/dev/null || true
   wait "$watcher_pid" 2>/dev/null || true
   event_count="$(wc -l <"$watched_events")"
-  (( event_count == 1 )) || fail "import exposed $event_count writes inside the watched plugin tree"
+  (( event_count == 0 )) || fail "import exposed $event_count writes inside the watched plugin tree"
 fi
+
+migration_legacy="$TMP/migration/plugin/data/subscriptions"
+migration_data="$TMP/migration/share/fatlj.mihomo/subscriptions"
+migration_cache="$TMP/migration/cache"
+mkdir -p "$migration_legacy/url-migrated"
+printf 'proxies: []\n' >"$migration_legacy/url-migrated/config.yaml"
+printf 'https://migration.invalid/config\n' >"$migration_legacy/url-migrated/source.url"
+migration_result="$(env \
+  MIHOMO_MIGRATION_TESTING=1 \
+  MIHOMO_LEGACY_SUBSCRIPTION_DATA="$migration_legacy" \
+  MIHOMO_SUBSCRIPTION_DATA="$migration_data" \
+  MIHOMO_SUBSCRIPTION_CACHE="$migration_cache" \
+  "$MIGRATE")"
+jq -e '.ok and .migrated == 1' <<<"$migration_result" >/dev/null
+[[ -f $migration_data/url-migrated/config.yaml ]] || fail "legacy subscription was not migrated"
+[[ ! -e $migration_legacy/url-migrated ]] || fail "legacy subscription remained in the plugin tree"
+jq -e '.migrated == 0' <<<"$(env \
+  MIHOMO_MIGRATION_TESTING=1 \
+  MIHOMO_LEGACY_SUBSCRIPTION_DATA="$migration_legacy" \
+  MIHOMO_SUBSCRIPTION_DATA="$migration_data" \
+  MIHOMO_SUBSCRIPTION_CACHE="$migration_cache" \
+  "$MIGRATE")" >/dev/null
 
 large="$TMP/too-large.yaml"
 printf 'mode: rule\n012345678901234567890123456789\n' >"$large"
@@ -226,4 +257,4 @@ if printf '%s\n' "$large" | env "${common_env[@]}" MIHOMO_SUBSCRIPTION_MAX_BYTES
 fi
 assert_eq "$(env MIHOMO_SUBSCRIPTION_TESTING=1 MIHOMO_SUBSCRIPTION_DATA="$data" "$STATUS" | jq -r .count)" 4
 
-echo "subscription_tests=ok local_duplicates=2 url_dedup=1 proxy_inherited=1 direct_without_proxy=1 watched_commit_events=1 atomic_failure=1"
+echo "subscription_tests=ok external_data=1 legacy_migration=1 unchanged_no_write=1 local_duplicates=2 url_dedup=1 proxy_inherited=1 direct_without_proxy=1 watched_commit_events=0 atomic_failure=1"

@@ -48,19 +48,19 @@ The installation and subscription sections are separated with Omarchy's native `
 
 The importer does not add, remove, or bypass proxy settings. Curl honors the user's existing environment and curl configuration; without a configured proxy it connects directly. Sources are passed from QML over stdin rather than argv.
 
-Subscriptions are stored physically under the plugin directory as requested:
+Subscriptions are durable user data outside the recursively watched plugin directory:
 
 ```text
-data/subscriptions/url-<sha256-of-exact-url>/
+~/.local/share/fatlj.mihomo/subscriptions/url-<sha256-of-exact-url>/
   config.yaml
   source.url
-data/subscriptions/local-<timestamp>-<random>/
+~/.local/share/fatlj.mihomo/subscriptions/local-<timestamp>-<random>/
   config.yaml
 ```
 
-Omarchy recursively watches plugin directories and its validator rejects symlinks, so downloads, local copies, logs, locking, and Mihomo validation are staged under `~/.cache/fatlj-mihomo-subscription`. Only one final atomic rename enters the watched `data/` tree. This reduces an import from dozens of reload-triggering events to one unavoidable commit event while keeping the actual subscription in the plugin directory.
+Omarchy unloads all panels whenever any file inside a local plugin changes. Keeping subscriptions in the plugin tree therefore closed the panel after every successful import even though Quickshell itself did not crash. Downloads, local copies, logs, locking, and Mihomo validation remain staged under `~/.cache/fatlj-mihomo-subscription`; the final atomic commit now enters the XDG data directory and does not rebuild the plugin. On first load, `subscription/migrate.sh` moves legacy `data/subscriptions` entries to the XDG location with conflict and permission checks. This one-time migration can cause one plugin reload while removing the legacy directory, but subsequent imports do not touch the watched tree.
 
-The complete URL is saved in `source.url` with mode 0600 but is never returned by the status helper. Importing the exact URL again atomically updates its existing entry. Local files deliberately have no source metadata or deduplication and create a new entry each time. Entries and the data directory use modes 0600 and 0700 respectively.
+The complete URL is saved in `source.url` with mode 0600 but is never returned by the status helper. Importing the exact URL again atomically updates its existing entry; byte-identical content returns `unchanged` without rewriting the file. Local files deliberately have no source metadata or deduplication and create a new entry each time. Entries and the data directory use modes 0600 and 0700 respectively.
 
 The subscription status helper uses the system `python-yaml` SafeLoader with bounded alias expansion to parse inline `proxies`. Only each node's `name` and `type` enter status JSON; server addresses, ports, UUIDs, passwords, and other credentials are never returned. Every subscription owns an independently collapsible node list inside one height-bounded scrolling region. Headers default collapsed and show the label, node count, and expand/collapse indicator; expansion state is memory-only. Up to 500 nodes per subscription are rendered when expanded, with the full count and truncation notice retained. `proxy-providers` are counted, but provider nodes cannot be listed until their separate provider files exist locally.
 
