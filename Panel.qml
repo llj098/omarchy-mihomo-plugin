@@ -13,7 +13,7 @@ Panel {
   ipcTarget: "fatlj.mihomo"
 
   readonly property string pluginDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/fatlj.mihomo"
-  readonly property string pluginVersion: "0.10.2"
+  readonly property string pluginVersion: "0.10.3"
   readonly property string statusScript: pluginDir + "/bootstrap/status.sh"
   readonly property string bootstrapScript: pluginDir + "/bootstrap/bootstrap.sh"
   readonly property string subscriptionStatusScript: pluginDir + "/subscription/status.sh"
@@ -391,7 +391,7 @@ Panel {
   function updateSubscription(subscriptionId) {
     if (subscriptionUpdateProc.running || !subscriptionId) return
     subscriptionError = ""
-    subscriptionMessage = "Updating subscription"
+    subscriptionMessage = ""
     subscriptionUpdateProc.pendingRequest = JSON.stringify({subscriptionId: subscriptionId})
     subscriptionUpdateProc.running = true
   }
@@ -501,11 +501,14 @@ Panel {
           root.subscriptionError = ""
           subscriptionInput.text = ""
           root.showSubscriptionInput = false
+          subscriptionNoticeTimer.restart()
         } catch (error) {
           root.subscriptionError = "Subscription was imported but its result could not be read"
+          subscriptionNoticeTimer.restart()
         }
       } else {
         root.subscriptionError = String(subscriptionImportStderr.text || "Subscription import failed").trim()
+        subscriptionNoticeTimer.restart()
       }
       root.refreshSubscriptions()
     }
@@ -532,15 +535,17 @@ Panel {
       if (exitCode === 0) {
         try {
           var result = JSON.parse(String(subscriptionUpdateStdout.text || "{}"))
-          root.subscriptionMessage = result.action === "updated" ? "Subscription updated"
-            : result.action === "unchanged" ? "Subscription unchanged"
-            : "Subscription added"
+          // Omarchy reflects action results in refreshed row state instead of
+          // a persistent banner, so success clears any previous notice.
           root.subscriptionError = ""
+          root.subscriptionMessage = ""
         } catch (error) {
           root.subscriptionError = "Subscription was updated but its result could not be read"
+          subscriptionNoticeTimer.restart()
         }
       } else {
         root.subscriptionError = String(subscriptionUpdateStderr.text || "Subscription update failed").trim()
+        subscriptionNoticeTimer.restart()
       }
       root.refreshSubscriptions()
     }
@@ -765,6 +770,16 @@ Panel {
       } else {
         root.recommendError = String(recommendStderr.text || "Recommendation speed test failed").trim()
       }
+    }
+  }
+
+  Timer {
+    id: subscriptionNoticeTimer
+    interval: 4000
+    repeat: false
+    onTriggered: {
+      root.subscriptionError = ""
+      root.subscriptionMessage = ""
     }
   }
 
@@ -1177,16 +1192,13 @@ Panel {
                       }
                     }
 
-                    Button {
+                    PanelActionButton {
                       id: subscriptionUpdateButton
                       visible: subscriptionList.subscription.kind === "url"
                       iconText: "󰑐"
                       tooltipText: subscriptionUpdateProc.running ? "Updating" : "Update subscription"
                       foreground: root.foreground
                       fontFamily: root.fontFamily
-                      iconSize: Style.font.subtitle * 1.5
-                      horizontalPadding: Style.spacing.controlGap
-                      verticalPadding: Style.space(2)
                       enabled: !subscriptionUpdateProc.running
                       opacity: subscriptionUpdateProc.running ? 0.5 : 1.0
                       Layout.alignment: Qt.AlignVCenter
@@ -1262,7 +1274,7 @@ Panel {
                           }
                         }
 
-                        Button {
+                        PanelActionButton {
                           id: groupTestButton
                           readonly property bool testing: root.latencyBusyKey === root.groupExpansionKey(
                             subscriptionList.subscription.id, groupList.group.name)
@@ -1275,9 +1287,6 @@ Panel {
                             : "Speed Test · Temporary Mihomo"
                           foreground: root.foreground
                           fontFamily: root.fontFamily
-                          iconSize: Style.font.subtitle * 1.5
-                          horizontalPadding: Style.space(5)
-                          verticalPadding: Style.space(2)
                           enabled: !latencyProc.running
                           opacity: latencyProc.running && !testing ? 0.5 : 1.0
                           Layout.alignment: Qt.AlignVCenter

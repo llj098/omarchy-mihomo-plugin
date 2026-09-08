@@ -30,7 +30,7 @@ fi
 jq -e '
   .schemaVersion == 1
   and .id == "fatlj.mihomo"
-  and .version == "0.10.2"
+  and .version == "0.10.3"
   and (.kinds | index("bar-widget") != null)
   and .entryPoints.barWidget == "Panel.qml"
   and .barWidget.defaultSection == "right"
@@ -83,7 +83,7 @@ grep -Fq 'command: [root.subscriptionStatusScript]' "$PANEL" || fail "subscripti
 grep -Fq 'stdinEnabled: true' "$PANEL" || fail "subscription source is exposed through argv instead of stdin"
 [[ $(grep -c 'PanelSeparator {' "$PANEL") -ge 3 ]] || fail "installation, settings, and subscriptions are not visibly separated"
 grep -Fq 'text: "CONFIG"' "$PANEL" || fail "config section is missing"
-grep -Fq 'readonly property string pluginVersion: "0.10.2"' "$PANEL" || fail "panel plugin version does not match the manifest"
+grep -Fq 'readonly property string pluginVersion: "0.10.3"' "$PANEL" || fail "panel plugin version does not match the manifest"
 grep -Fq 'text: "PLUGIN"' "$PANEL" || fail "plugin version section is missing"
 grep -Fq 'value: root.pluginVersion' "$PANEL" || fail "plugin version value is not rendered"
 grep -Fq 'meta: root.mihomoInstalled ? root.packageVersion : ""' "$PANEL" || fail "Mihomo version is not under the title"
@@ -174,6 +174,11 @@ grep -Fq 'command: [root.subscriptionControlScript, "update"]' "$PANEL" || fail 
 grep -Fq 'root.updateSubscription(subscriptionList.subscription.id)' "$PANEL" || fail "subscription update button is not clickable"
 grep -Fq 'visible: subscriptionList.subscription.kind === "url"' "$PANEL" || fail "update button is not limited to URL subscriptions"
 grep -Fq 'tooltipText: subscriptionUpdateProc.running ? "Updating" : "Update subscription"' "$PANEL" || fail "update button does not use an official tooltip"
+grep -Fq 'PanelActionButton {' "$PANEL" || fail "row actions must use the official PanelActionButton"
+grep -Fq 'id: subscriptionNoticeTimer' "$PANEL" || fail "subscription notices never clear"
+grep -Fq 'interval: 4000' "$PANEL" || fail "subscription notice timer interval is missing"
+grep -Fq 'subscriptionNoticeTimer.restart()' "$PANEL" || fail "update/import notices do not auto-clear"
+if grep -Fq 'subscriptionMessage = "Updating subscription"' "$PANEL"; then fail "update still shows a persistent progress banner"; fi
 grep -Fq 'text: "RECOMMEND"' "$PANEL" || fail "recommendation section is missing"
 grep -Fq 'model: recommendSubscription.recommendation.top || []' "$PANEL" || fail "per-subscription recommendation Top 3 is not rendered"
 grep -Fq 'height: Math.min(contentHeight, Style.space(180))' "$PANEL" || fail "recommendation list is not height-bounded"
@@ -197,4 +202,4 @@ grep -Fq 'time.monotonic() - started < 1' "$LATENCY_HELPER" || fail "quick all-n
 
 grep -Fq 'result.action === "unchanged" ? "Subscription unchanged"' "$PANEL" || fail "unchanged subscription imports are not reported"
 
-echo "ui_tests=ok url_update_button=1 external_subscription_data=1 migration_on_load=1 unchanged_import=1 cold_start_latency_guard=1 manual_temporary_latency=1 bottom_plugin_version=1 official_truncated_node_tooltip=1 null_connections_zero=1 parent_death_cleanup=1 healthy_node_cancels_recommend=1 recommend_top3=1 shared_proxy_row=1 bounded_recommend_scroll=1 active_node_latency_on_open=1 one_shot_basic_status=1 no_closed_panel_polling=1 no_default_port_flash=1 on_demand_details=1 runtime_statistics=1 main_controller_latency=1 network_style_grid=1 runtime_settings=1 port_7890=1 inline_config=1 immediate_apply=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"
+echo "ui_tests=ok official_row_action=1 transient_notice=1 url_update_button=1 external_subscription_data=1 migration_on_load=1 unchanged_import=1 cold_start_latency_guard=1 manual_temporary_latency=1 bottom_plugin_version=1 official_truncated_node_tooltip=1 null_connections_zero=1 parent_death_cleanup=1 healthy_node_cancels_recommend=1 recommend_top3=1 shared_proxy_row=1 bounded_recommend_scroll=1 active_node_latency_on_open=1 one_shot_basic_status=1 no_closed_panel_polling=1 no_default_port_flash=1 on_demand_details=1 runtime_statistics=1 main_controller_latency=1 network_style_grid=1 runtime_settings=1 port_7890=1 inline_config=1 immediate_apply=1 apply_failure_reset=1 ufw_wiring=1 subscription_group_collapse=1 clickable_nodes=1 style_tokens=shared"
