@@ -583,6 +583,36 @@ def stop():
     return result
 
 
+def run_import(script: Path, source: str):
+    result = subprocess.run([str(script)], input=source + "\n", text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if result.returncode != 0:
+        raise ControlError(result.stderr.strip() or "Subscription update failed")
+    try:
+        value = json.loads(result.stdout)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ControlError("Subscription update returned an invalid result") from error
+    if not isinstance(value, dict):
+        raise ControlError("Subscription update returned an invalid result")
+    return value
+
+
+def update_subscription(request):
+    subscription_id = request.get("subscriptionId")
+    if not isinstance(subscription_id, str) or not subscription_id:
+        raise ControlError("Subscription is required")
+    data_dir, _ = paths()
+    config = subscription_config(data_dir, subscription_id)
+    source_file = config.parent / "source.url"
+    if not source_file.is_file():
+        raise ControlError("Only imported URL subscriptions can be updated")
+    url = source_file.read_text(encoding="utf-8").rstrip("\n")
+    if not url.startswith(("http://", "https://")):
+        raise ControlError("Stored subscription source is not an HTTP(S) URL")
+    script = Path(__file__).resolve().parent / "import.sh"
+    return run_import(script, url)
+
+
 def main():
     command = sys.argv[1] if len(sys.argv) > 1 else "status"
     try:
@@ -592,6 +622,8 @@ def main():
             result = status(include_statistics=True)
         elif command == "latency":
             result = active_node_latency()
+        elif command == "update":
+            result = update_subscription(read_request("Invalid subscription update request"))
         elif command in {"start", "stop", "apply"}:
             _, state_root = paths()
             state_root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -606,7 +638,7 @@ def main():
                 else:
                     result = stop()
         else:
-            raise ControlError("Usage: control.py start|status|details|latency|stop|apply")
+            raise ControlError("Usage: control.py start|status|details|latency|stop|apply|update")
     except ControlError as error:
         print(str(error), file=sys.stderr)
         raise SystemExit(1)

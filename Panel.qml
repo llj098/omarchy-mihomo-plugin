@@ -13,7 +13,7 @@ Panel {
   ipcTarget: "fatlj.mihomo"
 
   readonly property string pluginDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/fatlj.mihomo"
-  readonly property string pluginVersion: "0.10.1"
+  readonly property string pluginVersion: "0.10.2"
   readonly property string statusScript: pluginDir + "/bootstrap/status.sh"
   readonly property string bootstrapScript: pluginDir + "/bootstrap/bootstrap.sh"
   readonly property string subscriptionStatusScript: pluginDir + "/subscription/status.sh"
@@ -388,6 +388,14 @@ Panel {
     subscriptionImportProc.running = true
   }
 
+  function updateSubscription(subscriptionId) {
+    if (subscriptionUpdateProc.running || !subscriptionId) return
+    subscriptionError = ""
+    subscriptionMessage = "Updating subscription"
+    subscriptionUpdateProc.pendingRequest = JSON.stringify({subscriptionId: subscriptionId})
+    subscriptionUpdateProc.running = true
+  }
+
   onOpenedChanged: {
     if (opened) {
       cursorActive = bootstrapAvailable
@@ -498,6 +506,41 @@ Panel {
         }
       } else {
         root.subscriptionError = String(subscriptionImportStderr.text || "Subscription import failed").trim()
+      }
+      root.refreshSubscriptions()
+    }
+  }
+
+  Process {
+    id: subscriptionUpdateProc
+    property string pendingRequest: ""
+    command: [root.subscriptionControlScript, "update"]
+    stdinEnabled: true
+    stdout: StdioCollector {
+      id: subscriptionUpdateStdout
+      waitForEnd: true
+    }
+    stderr: StdioCollector {
+      id: subscriptionUpdateStderr
+      waitForEnd: true
+    }
+    onStarted: {
+      write(pendingRequest + "\n")
+      pendingRequest = ""
+    }
+    onExited: function(exitCode) {
+      if (exitCode === 0) {
+        try {
+          var result = JSON.parse(String(subscriptionUpdateStdout.text || "{}"))
+          root.subscriptionMessage = result.action === "updated" ? "Subscription updated"
+            : result.action === "unchanged" ? "Subscription unchanged"
+            : "Subscription added"
+          root.subscriptionError = ""
+        } catch (error) {
+          root.subscriptionError = "Subscription was updated but its result could not be read"
+        }
+      } else {
+        root.subscriptionError = String(subscriptionUpdateStderr.text || "Subscription update failed").trim()
       }
       root.refreshSubscriptions()
     }
@@ -1087,46 +1130,68 @@ Panel {
                     foreground: root.foreground
                   }
 
-                  CursorSurface {
-                    id: subscriptionHeaderSurface
+                  RowLayout {
                     width: parent.width
-                    height: Math.max(subscriptionHeader.implicitHeight, subscriptionMeta.implicitHeight)
-                      + Style.spacing.controlGap
-                    foreground: root.foreground
-                    hasCursor: subscriptionHeaderHover.hovered
+                    spacing: Style.space(6)
 
-                    PanelSectionHeader {
-                      id: subscriptionHeader
-                      text: subscriptionList.subscription.label
+                    CursorSurface {
+                      id: subscriptionHeaderSurface
+                      Layout.fillWidth: true
+                      height: Math.max(subscriptionHeader.implicitHeight, subscriptionMeta.implicitHeight)
+                        + Style.spacing.controlGap
+                      foreground: root.foreground
+                      hasCursor: subscriptionHeaderHover.hovered
+
+                      PanelSectionHeader {
+                        id: subscriptionHeader
+                        text: subscriptionList.subscription.label
+                        foreground: root.foreground
+                        fontFamily: root.fontFamily
+                        anchors.left: parent.left
+                        anchors.leftMargin: Style.space(6)
+                        anchors.verticalCenter: parent.verticalCenter
+                      }
+
+                      Text {
+                        id: subscriptionMeta
+                        text: (subscriptionList.expanded ? "▾ " : "▸ ")
+                          + subscriptionList.subscription.groupCount
+                          + (subscriptionList.subscription.groupCount === 1 ? " GROUP · " : " GROUPS · ")
+                          + subscriptionList.subscription.nodeCount + " NODES"
+                          + (subscriptionList.subscription.parseError ? " · PARSE ERROR" : "")
+                        color: subscriptionList.subscription.parseError ? root.urgent : root.dim
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.caption
+                        font.bold: true
+                        anchors.right: parent.right
+                        anchors.rightMargin: Style.space(6)
+                        anchors.verticalCenter: parent.verticalCenter
+                      }
+
+                      HoverHandler { id: subscriptionHeaderHover }
+                      TapHandler {
+                        onTapped: root.toggleSubscription(
+                          subscriptionList.subscription.id,
+                          subscriptionList.subscription.groups.length > 0
+                            ? subscriptionList.subscription.groups[0].name : "")
+                      }
+                    }
+
+                    Button {
+                      id: subscriptionUpdateButton
+                      visible: subscriptionList.subscription.kind === "url"
+                      iconText: "󰑐"
+                      tooltipText: subscriptionUpdateProc.running ? "Updating" : "Update subscription"
                       foreground: root.foreground
                       fontFamily: root.fontFamily
-                      anchors.left: parent.left
-                      anchors.leftMargin: Style.space(6)
-                      anchors.verticalCenter: parent.verticalCenter
-                    }
-
-                    Text {
-                      id: subscriptionMeta
-                      text: (subscriptionList.expanded ? "▾ " : "▸ ")
-                        + subscriptionList.subscription.groupCount
-                        + (subscriptionList.subscription.groupCount === 1 ? " GROUP · " : " GROUPS · ")
-                        + subscriptionList.subscription.nodeCount + " NODES"
-                        + (subscriptionList.subscription.parseError ? " · PARSE ERROR" : "")
-                      color: subscriptionList.subscription.parseError ? root.urgent : root.dim
-                      font.family: root.fontFamily
-                      font.pixelSize: Style.font.caption
-                      font.bold: true
-                      anchors.right: parent.right
-                      anchors.rightMargin: Style.space(6)
-                      anchors.verticalCenter: parent.verticalCenter
-                    }
-
-                    HoverHandler { id: subscriptionHeaderHover }
-                    TapHandler {
-                      onTapped: root.toggleSubscription(
-                        subscriptionList.subscription.id,
-                        subscriptionList.subscription.groups.length > 0
-                          ? subscriptionList.subscription.groups[0].name : "")
+                      iconSize: Style.font.subtitle * 1.5
+                      horizontalPadding: Style.spacing.controlGap
+                      verticalPadding: Style.space(2)
+                      enabled: !subscriptionUpdateProc.running
+                      opacity: subscriptionUpdateProc.running ? 0.5 : 1.0
+                      Layout.alignment: Qt.AlignVCenter
+                      Layout.rightMargin: Style.space(4)
+                      onClicked: root.updateSubscription(subscriptionList.subscription.id)
                     }
                   }
 

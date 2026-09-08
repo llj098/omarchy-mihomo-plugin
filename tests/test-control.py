@@ -160,6 +160,46 @@ with tempfile.TemporaryDirectory() as temporary:
     assert requests[0][1].startswith("/proxies/Node%20A/delay?")
     assert requests[0][2] == 8
 
+with tempfile.TemporaryDirectory() as temporary:
+    data_dir = Path(temporary)
+    url_entry = data_dir / "url-test"
+    url_entry.mkdir()
+    (url_entry / "config.yaml").write_text("proxies: []\n", encoding="utf-8")
+    (url_entry / "source.url").write_text("https://update.invalid/config\n", encoding="utf-8")
+    local_entry = data_dir / "local-test"
+    local_entry.mkdir()
+    (local_entry / "config.yaml").write_text("proxies: []\n", encoding="utf-8")
+    original_paths = control.paths
+    original_run_import = control.run_import
+    try:
+        control.paths = lambda: (data_dir, Path("/tmp/state"))
+        captured = []
+        control.run_import = lambda script, source: captured.append(source) or {
+            "ok": True, "action": "updated", "id": "url-test",
+            "label": "update.invalid", "path": str(url_entry / "config.yaml"), "bytes": 12
+        }
+        assert control.update_subscription({"subscriptionId": "url-test"})["action"] == "updated"
+        assert captured == ["https://update.invalid/config"]
+        control.run_import = lambda script, source: {
+            "ok": True, "action": "unchanged", "id": "url-test"
+        }
+        assert control.update_subscription({"subscriptionId": "url-test"})["action"] == "unchanged"
+        try:
+            control.update_subscription({"subscriptionId": "local-test"})
+        except control.ControlError as error:
+            assert "Only imported URL subscriptions" in str(error)
+        else:
+            raise AssertionError("local subscription update was allowed")
+        try:
+            control.update_subscription({"subscriptionId": "missing"})
+        except control.ControlError:
+            pass
+        else:
+            raise AssertionError("missing subscription update was allowed")
+    finally:
+        control.paths = original_paths
+        control.run_import = original_run_import
+
 for invalid_settings in (
     {"port": 1023, "allowLan": False},
     {"port": 65536, "allowLan": False},
@@ -326,4 +366,4 @@ with tempfile.TemporaryDirectory() as temporary:
             else:
                 os.environ[key] = value
 
-print("control_tests=ok settings_persistence=1 unix_controller=1 null_connections=zero controller_statistics=1 group_injection=1 dns_preserved=1 active_node_latency=1 port_7890=1 occupied_port_guard=1 apply_rollback=1 traversal_rejected=1")
+print("control_tests=ok settings_persistence=1 unix_controller=1 null_connections=zero controller_statistics=1 group_injection=1 dns_preserved=1 subscription_update=1 active_node_latency=1 port_7890=1 occupied_port_guard=1 apply_rollback=1 traversal_rejected=1")
