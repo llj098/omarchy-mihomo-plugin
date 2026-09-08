@@ -198,7 +198,6 @@ def prepare_runtime_config(document, node_name: str, port: int, allow_lan: bool 
         "secret",
         "listeners",
         "tun",
-        "rule-providers",
     ):
         runtime.pop(key, None)
     runtime["mixed-port"] = port
@@ -207,20 +206,26 @@ def prepare_runtime_config(document, node_name: str, port: int, allow_lan: bool 
     runtime["mode"] = "rule"
     runtime["log-level"] = "warning"
 
-    dns = runtime.get("dns")
-    if isinstance(dns, dict):
-        dns = dict(dns)
-        dns.pop("listen", None)
-        runtime["dns"] = dns
-
-    active_group = "__FATLJ_ACTIVE__"
-    groups = runtime.get("proxy-groups")
-    if not isinstance(groups, list):
-        groups = []
-    groups = [group for group in groups if not (isinstance(group, dict) and group.get("name") == active_group)]
-    groups.append({"name": active_group, "type": "select", "proxies": [node_name]})
-    runtime["proxy-groups"] = groups
-    runtime["rules"] = [f"MATCH,{active_group}"]
+    proxy_groups = runtime.get("proxy-groups")
+    if not isinstance(proxy_groups, list):
+        proxy_groups = []
+    updated_groups = []
+    selected_group = None
+    for group in proxy_groups:
+        if not isinstance(group, dict):
+            updated_groups.append(group)
+            continue
+        members = group.get("proxies")
+        member_names = [member for member in members if isinstance(member, str)] if isinstance(members, list) else []
+        if selected_group is None and node_name in member_names:
+            selected_group = dict(group)
+            selected_group["proxies"] = [node_name]
+            updated_groups.append(selected_group)
+        else:
+            updated_groups.append(group)
+    if selected_group is None:
+        raise ControlError("Selected node was not found in any proxy group")
+    runtime["proxy-groups"] = updated_groups
 
     profile = runtime.get("profile")
     if not isinstance(profile, dict):

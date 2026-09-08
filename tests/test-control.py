@@ -42,13 +42,12 @@ assert runtime["allow-lan"] is False
 assert runtime["bind-address"] == "127.0.0.1"
 assert runtime["mode"] == "rule"
 assert runtime["log-level"] == "warning"
-assert runtime["rules"] == ["MATCH,__FATLJ_ACTIVE__"]
-assert runtime["proxy-groups"][-1] == {
-    "name": "__FATLJ_ACTIVE__",
-    "type": "select",
-    "proxies": ["节点 B"],
-}
-assert runtime["dns"] == {"enable": True, "nameserver": ["1.1.1.1"]}
+assert runtime["rules"] == ["MATCH,PROXY"]
+assert runtime["proxy-groups"] == [
+    {"name": "PROXY", "type": "select", "proxies": ["节点 B"]}
+]
+assert "__FATLJ_ACTIVE__" not in [group["name"] for group in runtime["proxy-groups"]]
+assert runtime["dns"] == source["dns"]
 for removed in (
     "port",
     "socks-port",
@@ -56,9 +55,9 @@ for removed in (
     "secret",
     "tun",
     "listeners",
-    "rule-providers",
 ):
     assert removed not in runtime
+assert runtime["rule-providers"] == source["rule-providers"]
 assert runtime["proxies"] == original["proxies"]
 assert runtime["profile"]["store-selected"] is False
 
@@ -66,6 +65,12 @@ lan_runtime, _ = control.prepare_runtime_config(source, "Node A", 8123, True)
 assert lan_runtime["mixed-port"] == 8123
 assert lan_runtime["allow-lan"] is True
 assert lan_runtime["bind-address"] == "0.0.0.0"
+assert lan_runtime["rules"] == ["MATCH,PROXY"]
+assert lan_runtime["proxy-groups"] == [
+    {"name": "PROXY", "type": "select", "proxies": ["Node A"]}
+]
+assert lan_runtime["rule-providers"] == source["rule-providers"]
+assert lan_runtime["dns"] == source["dns"]
 assert control.validate_settings({"port": 7890, "allowLan": False}) == {
     "port": 7890, "allowLan": False
 }
@@ -175,6 +180,15 @@ except control.ControlError:
     pass
 else:
     raise AssertionError("missing node was accepted")
+
+orphan = copy.deepcopy(source)
+orphan["proxy-groups"] = [{"name": "OTHER", "type": "select", "proxies": ["Node A"]}]
+try:
+    control.prepare_runtime_config(orphan, "节点 B", 7891)
+except control.ControlError as error:
+    assert "not found in any proxy group" in str(error)
+else:
+    raise AssertionError("node outside every proxy group was accepted")
 
 duplicate = copy.deepcopy(source)
 duplicate["proxies"].append(copy.deepcopy(duplicate["proxies"][0]))
@@ -312,4 +326,4 @@ with tempfile.TemporaryDirectory() as temporary:
             else:
                 os.environ[key] = value
 
-print("control_tests=ok settings_persistence=1 unix_controller=1 null_connections=zero controller_statistics=1 active_node_latency=1 port_7890=1 occupied_port_guard=1 apply_rollback=1 traversal_rejected=1")
+print("control_tests=ok settings_persistence=1 unix_controller=1 null_connections=zero controller_statistics=1 group_injection=1 dns_preserved=1 active_node_latency=1 port_7890=1 occupied_port_guard=1 apply_rollback=1 traversal_rejected=1")

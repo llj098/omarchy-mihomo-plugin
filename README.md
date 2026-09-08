@@ -76,12 +76,13 @@ When applied **Allow LAN** is enabled, the panel always shows **Review UFW rule*
 
 The original subscription is never modified. The generated configuration:
 
-- retains the subscription's proxy definitions and DNS resolvers;
-- creates a one-node `__FATLJ_ACTIVE__` select group and forces `MATCH` through it;
-- removes imported HTTP/SOCKS/redir/TProxy/controller/listener/TUN ports and rule providers, then supplies the plugin-owned Unix Controller at process launch;
-- removes the DNS listener while retaining internal DNS behavior;
+- retains the subscription's proxy definitions, DNS resolvers, full `dns` section (including `dns.listen`), `rules`, `rule-providers`, and `proxy-groups`;
+- activates the selected node by setting its original proxy group's members to only that node, so the subscription's own routing (`rules` and `rule-providers`) decides which traffic reaches it; no synthetic forced `MATCH` group and no fallback rule are added;
+- removes imported HTTP/SOCKS/redir/TProxy/controller/listener/TUN ports, then supplies the plugin-owned Unix Controller at process launch; `rule-providers` and `dns` are preserved;
 - sets `mixed-port`, `allow-lan`, and `bind-address` from the saved runtime settings (`127.0.0.1` when disabled, `0.0.0.0` when enabled);
 - is validated with `mihomo -t` before replacing the active runtime.
+
+If the selected node is not present in any proxy group, the start request fails with an explicit error; the plugin never silently falls back to a forced route.
 
 Runtime files and the current selection are mode-0600 data under `~/.local/state/fatlj.mihomo`; GeoIP is referenced from the signed system package. The plugin does not change desktop proxy settings, stop Clash Verge, or route applications automatically—clients opt in by using the saved mixed port (`7891` by default).
 
