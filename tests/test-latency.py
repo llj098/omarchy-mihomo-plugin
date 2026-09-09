@@ -68,13 +68,14 @@ try:
     group_calls = []
     latency.query_group = lambda socket_path, group_name, test_url: group_calls.append(
         (socket_path, group_name, test_url)
-    ) or {"Node A": 12, "Node B": 34}
+    ) or {}
+    latency.query_proxy = lambda _socket, name, _url: {"Node A": 12, "Node B": 34}.get(name)
     assert latency.query_delays(Path("/tmp/controller.sock"), "PROXY", ["Node A", "Node B"], "https://test") == {
         "Node A": 12, "Node B": 34
     }
-    assert group_calls == [(Path("/tmp/controller.sock"), "PROXY", "https://test")]
+    assert group_calls == []
 
-    latency.query_proxy = lambda _socket, name, _url: {"Node A": 56, "Node C": None}[name]
+    latency.query_proxy = lambda _socket, name, _url: {"Node A": 56, "Node C": None}.get(name)
     assert latency.query_delays(
         Path("/tmp/controller.sock"), "UNGROUPED", ["Node A", "Node C"], "https://test"
     ) == {"Node A": 56, "Node C": None}
@@ -212,4 +213,4 @@ if not child_stopped:
     os.kill(child_pid, 9)
     raise AssertionError("temporary Mihomo child survived its helper")
 
-print("latency_tests=ok cold_inventory_barrier=1 quick_all_timeout_retry=1 group_members=1 active_main_controller=1 inactive_temporary_controller=1 native_group_api=1 temporary_recommend_mihomo=1 parent_death_cleanup=1 top3_per_subscription=1")
+print("latency_tests=ok cold_inventory_barrier=1 quick_all_timeout_retry=1 group_members=1 group_tests_all_nodes=1 active_main_controller=1 inactive_temporary_controller=1 temporary_recommend_mihomo=1 parent_death_cleanup=1 top3_per_subscription=1")

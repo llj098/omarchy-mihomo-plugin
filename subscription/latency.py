@@ -252,8 +252,10 @@ def query_ready_proxies(socket_path: Path, node_names, test_url: str):
 
 
 def query_delays(socket_path: Path, group_name: str, node_names, test_url: str):
-    if group_name not in SYNTHETIC_GROUPS:
-        return query_group(socket_path, group_name, test_url)
+    # The running Mihomo narrows the selected node's group to that node only,
+    # so the native /group/{name}/delay endpoint would only cover the selected
+    # node and mark every other original member as a timeout. Every inline
+    # node is still defined in `proxies`, so test each member individually.
     return query_proxies(socket_path, node_names, test_url)
 
 

@@ -30,7 +30,7 @@ fi
 jq -e '
   .schemaVersion == 1
   and .id == "fatlj.mihomo"
-  and .version == "0.10.4"
+  and .version == "0.10.5"
   and (.kinds | index("bar-widget") != null)
   and .entryPoints.barWidget == "Panel.qml"
   and .barWidget.defaultSection == "right"
@@ -83,7 +83,7 @@ grep -Fq 'command: [root.subscriptionStatusScript]' "$PANEL" || fail "subscripti
 grep -Fq 'stdinEnabled: true' "$PANEL" || fail "subscription source is exposed through argv instead of stdin"
 [[ $(grep -c 'PanelSeparator {' "$PANEL") -ge 3 ]] || fail "installation, settings, and subscriptions are not visibly separated"
 grep -Fq 'text: "CONFIG"' "$PANEL" || fail "config section is missing"
-grep -Fq 'readonly property string pluginVersion: "0.10.4"' "$PANEL" || fail "panel plugin version does not match the manifest"
+grep -Fq 'readonly property string pluginVersion: "0.10.5"' "$PANEL" || fail "panel plugin version does not match the manifest"
 grep -Fq 'text: "PLUGIN"' "$PANEL" || fail "plugin version section is missing"
 grep -Fq 'value: root.pluginVersion' "$PANEL" || fail "plugin version value is not rendered"
 grep -Fq 'meta: root.mihomoInstalled ? root.packageVersion : ""' "$PANEL" || fail "Mihomo version is not under the title"
