@@ -13,7 +13,7 @@ Panel {
   ipcTarget: "fatlj.mihomo"
 
   readonly property string pluginDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/fatlj.mihomo"
-  readonly property string pluginVersion: "0.10.3"
+  readonly property string pluginVersion: "0.10.4"
   readonly property string statusScript: pluginDir + "/bootstrap/status.sh"
   readonly property string bootstrapScript: pluginDir + "/bootstrap/bootstrap.sh"
   readonly property string subscriptionStatusScript: pluginDir + "/subscription/status.sh"
@@ -535,10 +535,13 @@ Panel {
       if (exitCode === 0) {
         try {
           var result = JSON.parse(String(subscriptionUpdateStdout.text || "{}"))
-          // Omarchy reflects action results in refreshed row state instead of
-          // a persistent banner, so success clears any previous notice.
+          // A successful update only shows a transient notice (it clears
+          // automatically); the durable result is the refreshed row state.
+          root.subscriptionMessage = result.action === "updated" ? "Subscription updated"
+            : result.action === "unchanged" ? "Subscription unchanged"
+            : "Subscription added"
           root.subscriptionError = ""
-          root.subscriptionMessage = ""
+          subscriptionNoticeTimer.restart()
         } catch (error) {
           root.subscriptionError = "Subscription was updated but its result could not be read"
           subscriptionNoticeTimer.restart()
@@ -775,7 +778,7 @@ Panel {
 
   Timer {
     id: subscriptionNoticeTimer
-    interval: 4000
+    interval: 3000
     repeat: false
     onTriggered: {
       root.subscriptionError = ""
