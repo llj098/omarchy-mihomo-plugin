@@ -86,21 +86,33 @@ proxies:
     server: remote-node-secret.invalid
     uuid: remote-uuid-secret
 EOF
-python3 - "$body" "$port_file" "$proxy_log" <<'PY' &
+direct_port_file="$TMP/direct-port"
+python3 - "$body" "$port_file" "$direct_port_file" "$proxy_log" <<'PY' &
 import http.server
 import pathlib
 import socketserver
 import sys
+import threading
 
 body_path = pathlib.Path(sys.argv[1])
-port_path = pathlib.Path(sys.argv[2])
-log_path = pathlib.Path(sys.argv[3])
+proxy_port_path = pathlib.Path(sys.argv[2])
+direct_port_path = pathlib.Path(sys.argv[3])
+log_path = pathlib.Path(sys.argv[4])
 
 class Handler(http.server.BaseHTTPRequestHandler):
+    tag = ""
+    fail_prefix = None
+
     def do_GET(self):
-        payload = body_path.read_bytes()
         with log_path.open("a", encoding="utf-8") as stream:
-            stream.write(self.path + "\n")
+            stream.write(self.tag + " " + self.path + "\n")
+        name = self.path.rsplit("/", 1)[-1]
+        if self.fail_prefix is not None and name.startswith(self.fail_prefix):
+            self.send_response(502)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        payload = body_path.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", "application/yaml")
         self.send_header("Content-Length", str(len(payload)))
@@ -110,14 +122,29 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *_args):
         pass
 
-with socketserver.TCPServer(("127.0.0.1", 0), Handler) as server:
-    port_path.write_text(str(server.server_address[1]), encoding="ascii")
-    server.serve_forever()
+class ProxyHandler(Handler):
+    tag = "proxy"
+    fail_prefix = "fail-"
+
+class DirectHandler(Handler):
+    tag = "direct"
+    fail_prefix = None
+
+class ReusableTCPServer(socketserver.TCPServer):
+    allow_reuse_address = True
+
+proxy_server = ReusableTCPServer(("127.0.0.1", 0), ProxyHandler)
+direct_server = ReusableTCPServer(("127.0.0.2", 0), DirectHandler)
+proxy_port_path.write_text(str(proxy_server.server_address[1]), encoding="ascii")
+direct_port_path.write_text(str(direct_server.server_address[1]), encoding="ascii")
+threading.Thread(target=direct_server.serve_forever, daemon=True).start()
+proxy_server.serve_forever()
 PY
 SERVER_PID=$!
-for _ in {1..100}; do [[ -s $port_file ]] && break; sleep 0.02; done
-[[ -s $port_file ]] || fail "test proxy did not start"
+for _ in {1..100}; do [[ -s $port_file && -s $direct_port_file ]] && break; sleep 0.02; done
+[[ -s $port_file && -s $direct_port_file ]] || fail "test proxy did not start"
 port="$(<"$port_file")"
+direct_port="$(<"$direct_port_file")"
 
 url='http://subscription.invalid/config?token=top-secret'
 remote_one="$(printf '%s\n' "$url" | env "${common_env[@]}" \
@@ -141,6 +168,94 @@ printf '%s\n' "http://127.0.0.1:$port/direct" | env \
   MIHOMO_SUBSCRIPTION_MIHOMO="$fakebin/mihomo" \
   "$IMPORT" >/dev/null
 grep -Rq 'direct-without-proxy' "$direct_data" || fail "direct URL import failed without a proxy"
+
+# Proxy-fallback tests: an unreachable inherited proxy (typically the plugin's
+# own mixed port before Mihomo is running) must not deadlock the first import.
+# Every case clears no_proxy explicitly, and the direct target binds a second
+# loopback address (127.0.0.2) so proxy and direct traffic land on different
+# servers and the fixture log stays unambiguous.
+fallback_data="$TMP/fallback-data/subscriptions"
+fallback_env=(
+  MIHOMO_SUBSCRIPTION_TESTING=1
+  MIHOMO_SUBSCRIPTION_DATA="$fallback_data"
+  MIHOMO_SUBSCRIPTION_CACHE="$TMP/fallback-cache"
+  MIHOMO_SUBSCRIPTION_MIHOMO="$fakebin/mihomo"
+)
+
+# Dead proxy port, direct path healthy: import must succeed via the fallback.
+dead_proxy_url="http://127.0.0.2:$direct_port/dead-proxy.yaml"
+dead_proxy_result="$(printf '%s\n' "$dead_proxy_url" | env "${fallback_env[@]}" \
+  http_proxy="http://127.0.0.1:1" https_proxy= HTTP_PROXY= HTTPS_PROXY= \
+  all_proxy= ALL_PROXY= no_proxy= NO_PROXY= "$IMPORT")"
+jq -e '.ok and .action == "added" and .kind == "url"' <<<"$dead_proxy_result" >/dev/null
+
+# Live proxy that fails the request: it must be tried first, then the direct
+# fallback must succeed.
+broken_proxy_url="http://127.0.0.2:$direct_port/fail-broken.yaml"
+broken_proxy_result="$(printf '%s\n' "$broken_proxy_url" | env "${fallback_env[@]}" \
+  http_proxy="http://127.0.0.1:$port" https_proxy= HTTP_PROXY= HTTPS_PROXY= \
+  all_proxy= ALL_PROXY= no_proxy= NO_PROXY= "$IMPORT")"
+jq -e '.ok and .action == "added"' <<<"$broken_proxy_result" >/dev/null
+grep -Fq "$broken_proxy_url" "$proxy_log" || fail "broken proxy was not tried before the direct fallback"
+
+# Both paths dead: failure must report both reasons.
+if printf '%s\n' "http://127.0.0.2:1/both-dead.yaml" | env "${fallback_env[@]}" \
+    http_proxy="http://127.0.0.1:1" https_proxy= HTTP_PROXY= HTTPS_PROXY= \
+    all_proxy= ALL_PROXY= no_proxy= NO_PROXY= \
+    "$IMPORT" >/dev/null 2>"$TMP/both-dead.err"; then
+  fail "import succeeded although both proxy and direct paths are dead"
+fi
+grep -Fq 'Could not download the subscription (proxy:' "$TMP/both-dead.err" \
+  || fail "both-dead error is missing the proxy reason"
+grep -Fq '; direct:' "$TMP/both-dead.err" || fail "both-dead error is missing the direct reason"
+
+# No proxy environment: single attempt with the original error shape.
+if printf '%s\n' "http://127.0.0.2:1/no-proxy-env.yaml" | env -u http_proxy \
+    -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u all_proxy -u ALL_PROXY \
+    "${fallback_env[@]}" "$IMPORT" >/dev/null 2>"$TMP/no-proxy-env.err"; then
+  fail "import succeeded although the direct path is dead"
+fi
+grep -Fq 'Could not download the subscription:' "$TMP/no-proxy-env.err" \
+  || fail "no-proxy error is missing the download reason"
+if grep -Fq '(proxy:' "$TMP/no-proxy-env.err"; then
+  fail "no-proxy error claims a proxy attempt"
+fi
+
+# Scheme gating: an https source is gated on the https/all_proxy variables.
+if printf '%s\n' "https://127.0.0.2:1/scheme.yaml" | env "${fallback_env[@]}" \
+    https_proxy="http://127.0.0.1:1" http_proxy= HTTP_PROXY= HTTPS_PROXY= \
+    all_proxy= ALL_PROXY= no_proxy= NO_PROXY= \
+    "$IMPORT" >/dev/null 2>"$TMP/https-proxy.err"; then
+  fail "https import succeeded although both paths are dead"
+fi
+grep -Fq 'Could not download the subscription (proxy:' "$TMP/https-proxy.err" \
+  || fail "https import did not use the configured https proxy on its first attempt"
+grep -Fq '; direct:' "$TMP/https-proxy.err" || fail "https fallback reason is missing"
+
+# An http_proxy-only environment is not the proxy for an https source, so the
+# import must keep the single-attempt error shape.
+if printf '%s\n' "https://127.0.0.2:1/scheme.yaml" | env "${fallback_env[@]}" \
+    http_proxy="http://127.0.0.1:1" https_proxy= HTTP_PROXY= HTTPS_PROXY= \
+    all_proxy= ALL_PROXY= no_proxy= NO_PROXY= \
+    "$IMPORT" >/dev/null 2>"$TMP/https-no-proxy.err"; then
+  fail "https import succeeded although the direct path is dead"
+fi
+grep -Fq 'Could not download the subscription:' "$TMP/https-no-proxy.err" \
+  || fail "https import is missing the download reason"
+if grep -Fq '(proxy:' "$TMP/https-no-proxy.err"; then
+  fail "https import treated http_proxy as its proxy"
+fi
+
+# The direct fallback must also bypass a proxy configured in ~/.curlrc, which
+# only --noproxy '*' can suppress once the environment is stripped.
+curlrc_home="$TMP/curlrc-home"
+mkdir -p "$curlrc_home"
+printf 'proxy = "http://127.0.0.1:1"\n' >"$curlrc_home/.curlrc"
+curlrc_url="http://127.0.0.2:$direct_port/curlrc.yaml"
+curlrc_result="$(printf '%s\n' "$curlrc_url" | env "${fallback_env[@]}" \
+  HOME="$curlrc_home" http_proxy="http://127.0.0.1:1" https_proxy= HTTP_PROXY= \
+  HTTPS_PROXY= all_proxy= ALL_PROXY= no_proxy= NO_PROXY= "$IMPORT")"
+jq -e '.ok and .action == "added"' <<<"$curlrc_result" >/dev/null
 
 cat >"$body" <<'EOF'
 mode: rule
@@ -255,4 +370,4 @@ if printf '%s\n' "$large" | env "${common_env[@]}" MIHOMO_SUBSCRIPTION_MAX_BYTES
 fi
 assert_eq "$(env MIHOMO_SUBSCRIPTION_TESTING=1 MIHOMO_SUBSCRIPTION_DATA="$data" "$STATUS" | jq -r .count)" 4
 
-echo "subscription_tests=ok external_data=1 legacy_migration=1 unchanged_no_write=1 local_duplicates=2 url_dedup=1 proxy_inherited=1 direct_without_proxy=1 watched_commit_events=0 atomic_failure=1"
+echo "subscription_tests=ok external_data=1 legacy_migration=1 unchanged_no_write=1 local_duplicates=2 url_dedup=1 proxy_inherited=1 direct_without_proxy=1 dead_proxy_fallback=1 broken_proxy_fallback=1 both_paths_fail=1 no_proxy_single_attempt=1 https_proxy_gate=1 https_ignores_http_proxy=1 curlrc_proxy_bypass=1 watched_commit_events=0 atomic_failure=1"

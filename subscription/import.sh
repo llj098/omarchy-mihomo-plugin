@@ -75,6 +75,14 @@ validate_config() {
   fi
 }
 
+curl_reason() {
+  local log="$1" line
+  line="$(head -n 1 -- "$log" 2>/dev/null || true)"
+  line="${line#curl: }"
+  line="${line:-unknown download error}"
+  printf '%s\n' "${line:0:160}"
+}
+
 command -v jq >/dev/null 2>&1 || die "Required command is missing: jq"
 command -v flock >/dev/null 2>&1 || die "Required command is missing: flock"
 command -v sha256sum >/dev/null 2>&1 || die "Required command is missing: sha256sum"
@@ -107,15 +115,41 @@ case "$source" in
     escaped_source="${source//\\/\\\\}"
     escaped_source="${escaped_source//\"/\\\"}"
     printf 'url = "%s"\n' "$escaped_source" >"$curl_config"
-    # Deliberately preserve the user's environment and curl configuration:
-    # configured proxies are honored; without one curl connects directly. The
-    # URL is read from a mode-0600 config instead of appearing in curl's argv.
-    if ! curl --fail --location --silent --show-error \
+    # The URL is read from a mode-0600 config instead of appearing in curl's
+    # argv. The first attempt deliberately preserves the user's environment
+    # and curl configuration: configured proxies are honored; without one
+    # curl connects directly. If it fails while proxy variables for this
+    # URL's scheme are set, one retry without any proxy breaks the bootstrap
+    # deadlock where the inherited proxy is this plugin's own port and
+    # Mihomo cannot be running yet.
+    case "$source" in
+      https://*)
+        proxy_env="${https_proxy:-}${HTTPS_PROXY:-}${all_proxy:-}${ALL_PROXY:-}"
+        ;;
+      *)
+        proxy_env="${http_proxy:-}${HTTP_PROXY:-}${all_proxy:-}${ALL_PROXY:-}"
+        ;;
+    esac
+    if curl --fail --location --silent --show-error \
         --proto '=http,https' --proto-redir '=http,https' \
         --connect-timeout 10 --max-time 120 --max-filesize "$MAX_BYTES" \
         --retry 2 --retry-delay 1 --user-agent 'Mihomo' \
         --output "$candidate" --config "$curl_config" 2>"$WORK/download.log"; then
-      die "Could not download the subscription"
+      :
+    elif [[ -n $proxy_env ]]; then
+      if env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY \
+           -u all_proxy -u ALL_PROXY \
+        curl --fail --location --silent --show-error \
+            --proto '=http,https' --proto-redir '=http,https' \
+            --connect-timeout 5 --max-time 60 --max-filesize "$MAX_BYTES" \
+            --retry 1 --retry-delay 1 --user-agent 'Mihomo' --noproxy '*' \
+            --output "$candidate" --config "$curl_config" 2>"$WORK/download.direct.log"; then
+        :
+      else
+        die "Could not download the subscription (proxy: $(curl_reason "$WORK/download.log"); direct: $(curl_reason "$WORK/download.direct.log"))"
+      fi
+    else
+      die "Could not download the subscription: $(curl_reason "$WORK/download.log")"
     fi
     ;;
   *)

@@ -46,7 +46,7 @@ The installation and subscription sections are separated with Omarchy's native `
 - `http://` or `https://` is downloaded with curl;
 - every other value is treated as an absolute local path or a path beginning with `~/`.
 
-The importer does not add, remove, or bypass proxy settings. Curl honors the user's existing environment and curl configuration; without a configured proxy it connects directly. Sources are passed from QML over stdin rather than argv.
+The importer honors the user's existing environment and curl configuration on its first download attempt; without a configured proxy it connects directly. If that attempt fails while proxy variables for the URL's scheme are set, it retries once with all proxy settings removed, so an unreachable proxy (for example this plugin's own mixed port before Mihomo is running) cannot block the first import. Sources are passed from QML over stdin rather than argv.
 
 Subscriptions are durable user data outside the recursively watched plugin directory:
 
@@ -109,7 +109,7 @@ printf '%s\n' '{"subscriptionId":"url-<sha256-of-exact-url>"}' | ./subscription/
 
 ## Network and trust
 
-Before a proxy exists, the **Bootstrap script** contacts only the HTTPS mainland-China entries in the bundled snapshot of ArchLinuxCN's official [`mirrorlist-repo`](https://github.com/archlinuxcn/mirrorlist-repo), and explicitly removes inherited proxy variables. No mirror is written to `pacman.conf`. This policy is Bootstrap-specific; the separate subscription importer preserves user network settings.
+Before a proxy exists, the **Bootstrap script** contacts only the HTTPS mainland-China entries in the bundled snapshot of ArchLinuxCN's official [`mirrorlist-repo`](https://github.com/archlinuxcn/mirrorlist-repo), and explicitly removes inherited proxy variables. No mirror is written to `pacman.conf`. This policy is Bootstrap-specific; the separate subscription importer tries the user's configured proxy first and falls back to a direct connection when that path fails.
 
 All listed mirrors are measured concurrently with the system `pacman-contrib` `rankmirrors` command. Each measurement has a 10-second timeout, so unreachable mirrors do not make the complete ranking serially slow. The ten fastest responses are metadata-validated; up to three mirrors with identical package versions, filenames, and SHA-256 values become the primary plus fallbacks.
 
